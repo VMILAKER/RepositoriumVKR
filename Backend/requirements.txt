@@ -1,0 +1,8 @@
+fastapi==0.116.1
+numpy==2.3.1
+pydantic==2.11.7
+pymongo==4.13.2
+scikit_learn==1.7.0
+sentence_transformers==5.0.0
+SQLAlchemy==2.0.41
+uvicorn==0.35.0
