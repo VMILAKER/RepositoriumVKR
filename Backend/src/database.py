@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-POSTGRESQL_URL = "postgresql://postgres:kds041@localhost/postgres"
+POSTGRESQL_URL = "your_db_url"
 
 engine = create_engine(POSTGRESQL_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -31,3 +31,4 @@ def get_db_sql():
         yield db
     finally:
         db.close()
+
