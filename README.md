@@ -1,5 +1,7 @@
 ## Introduction
 This repository is considered to be the tool to collect and sort Graduate Qualification works of students. It might be helpful for pre-graduate students, who are searching for a theme of their qualification work, and supervisors as well. 
+![Sheme of RepositoriumVKR work](Images/Repositorium-1.png)
+*Image 1. Sheme of RepositoriumVKR work*
 ## Installation of dependencies
 1. Firstly install necessary dependencies for Backend part.
 ```
