@@ -4,7 +4,9 @@ This repository is considered to be the tool to collect and sort Graduate Qualif
 1. Firstly install necessary dependencies for Backend part.
 ```
  pip install -r Backend/requirements.txt
-    or
+```
+  or
+```
  pip install fastapi
  pip install numpy
  pip install pydantic
@@ -14,7 +16,7 @@ This repository is considered to be the tool to collect and sort Graduate Qualif
  pip install sqlalchemy
  pip install uvicorn
 ```
-2. Also, there are some packages for Frontend:</br>
+2. Next, there are some packages for Frontend:</br>
 * If you have already installed node and npm (check it with node -v and npm -v in terminal)
 ```
 npm create vite@latest
