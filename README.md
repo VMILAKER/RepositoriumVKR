@@ -25,7 +25,7 @@ npm create vite@latest
 ```
 npm install tailwindcss @tailwindcss/vite
 ```
-  More about Tailwind CSS installation: [Installing Tailwind CSS with Vite](https://tailwindcss.com/docs/installation/using-vite))
+  More about Tailwind CSS installation: [Installing Tailwind CSS with Vite](https://tailwindcss.com/docs/installation/using-vite)
 - Also it is vital to upload Antd:
 ```
 npm install antd --save
