@@ -16,7 +16,6 @@ MiniLM is used to map work's tags to vectors for tasks of semantic search. Each 
  pip install fastapi
  pip install numpy
  pip install pydantic
- pip install pymongo
  pip install scikit_learn
  pip install sentence_transformers
  pip install sqlalchemy
