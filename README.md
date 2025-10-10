@@ -5,7 +5,7 @@ This repository is considered to be the tool to collect and sort Graduate Qualif
 ### MiniLM
 MiniLM is used to map work's tags to vectors for tasks of semantic search. Each tag compares to vector from the database by cosine similarity, after calculations tags with cosine similarity value more than average value select only.
 ![MiniLM work in project](Images/Tag_MiniLM.jpg)
-*Image 2. MiniLM work in project*
+*Image 2. Possible MiniLM work in project*
 ## Installation of dependencies
 1. Firstly install necessary dependencies for Backend part.
 ```
