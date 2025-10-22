@@ -15,9 +15,7 @@ psycopg2.extras.register_uuid()
 
 
 def insert_data_db():
-
-    # Inizialisation of PostgreSQL DB
-    POSTGRESQL_URL = "your_db"
+    POSTGRESQL_URL = '...'
     engine = create_engine(POSTGRESQL_URL)
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = SessionLocal()
@@ -79,7 +77,7 @@ def build_filter(session, filter_dict: dict) -> List:
     filters = []
     for key, value in filter_dict.items():
         if value:
-            print(f'{key}: {value}')
+            # print(f'{key}: {value}')
             if isinstance(filter_dict[key], list):
                 if key in ['theme', 'supervisor']:
                     filter_theme = []
@@ -97,9 +95,10 @@ def build_filter(session, filter_dict: dict) -> List:
                     filters.append(
                         getattr(Models.GQW_model, key).in_(filter_dict[key]))
             else:
-                filters.append(getattr(Models.GQW_model, key) == value)
-        else:
-            pass
+                if key =='type_of_qualification':
+                    filters.append(getattr(Models.GQW_qualification, 'qualification') == value)
+                else:
+                    filters.append(getattr(Models.GQW_model, key) == value)
     return filters
 
 

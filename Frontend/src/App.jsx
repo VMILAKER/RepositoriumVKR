@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { Button, Form, Input, Select, Space,List, Card, Spin, Switch, Collapse, Upload, Checkbox, Pagination, InputNumber, message} from 'antd';
+import { Button, Form, Input, Select, Space,List, Card, Spin, Switch, Collapse, Upload, Checkbox, InputNumber, message} from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
+import {CardVKR} from './components/Card.jsx'
+import * as util from './components/Utilities.jsx';
 
 const { Option } = Select;
 
@@ -20,8 +22,6 @@ const formUpload = {
   abstract: '',
   reference: '',
   tags: ''
-
-
 };
 
 const layout = {
@@ -37,47 +37,33 @@ function App_main() {
   const [dataGQW, setGQW] = useState(initialFormState);
   const [gqwForm, setGqwData] = useState([]);
   const [dataUpload, setDataUpload] = useState(formUpload);
-  const [getOptions, setOptions] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [getNumber, setNumber] = useState(0)
+  const [filter, setFilter] = useState(0);
   const [isLoading, setLoading] = useState(false);
   const [isUploading, setUploading] = useState(false);
   const [isChecked, setChecked] = useState(false);
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
+  const [getSupervisors, setSupervisors] = useState([])
+  const [getReferences, setReferences] = useState([])
+  const [getDepartments, setDepartments] = useState([])
+  const [getDegrees, setDegrees] = useState([])
+  const [getThemes, setThemes] = useState([])
 
+
+  const url = "http://10.6.41.116:8001/repositorium"
+  
   // Error $ success message
-  const messageSystem = (type_message, params) => {
+  const messageSystem = (type_message, params, key) => {
     messageApi.open({
+      key,
       type: type_message,
       content: params,
       duration: 4,
     });
   };
 
-  // Building of lists with all supervisors and references
-  let options_superv = [];
-  let appointed_reference = []
-  const bin =[]
-  for (let i=0; i<getOptions.length; i++) {
-    if (!(bin.includes(getOptions[i]?.supervisor_gqw.name, 0))) {
-      options_superv.push({label: getOptions[i]?.supervisor_gqw.name, value:getOptions[i]?.supervisor_gqw.name})
-      bin.push(getOptions[i]?.supervisor_gqw.name)
-    }
-    if (!(bin.includes(getOptions[i]?.reference, 0))) {
-      appointed_reference.push(getOptions[i]?.reference)
-      bin.push(getOptions[i]?.reference)
-    }
-  }
-  options_superv.sort(function (a, b) {
-    if (a.value < b.value) {
-      return -1;
-    }
-    if (a.name > b.name) {
-      return 1;
-    }
-    return 0;
-  });
+
 
   // Check if the is .pdf
   const props = {
@@ -86,30 +72,66 @@ function App_main() {
     beforeUpload: info => {
       const isPdf = info.type === 'application/pdf'
       if (!isPdf) {
-        messageSystem('error', `${info.name} is not a pdf file`)
+        messageSystem('error', `${info.name} is not a pdf file`, 'notPdf')
         return isPdf || Upload.LIST_IGNORE
       }
       else {
-        if (!(appointed_reference.includes(info.name, 0))) {
-          console.log(appointed_reference)
+        if (!(getReferences.includes(info.name, 0))) {
           setSelectedFile(info)
           setDataUpload({...dataUpload, reference: info.name})
           return false
         }
         else {
-          messageSystem('error', `${info.name} already exists`)
+          messageSystem('error', `${info.name} already exists`, 'pdfExists')
         }
       }
     }
-  }
+  };
   
   // Fetching supervisors and references
-  const fetchAllData = async() => {
-    let url = `http://127.0.0.1:8000/repositorium/`
+  const fetchAllData = async(url_) => {
+    let bin = [];
+    let bin_departments = [];
+    let bin_degree = [];
+    let getOptions = [];
+    
+    let options_superv = [];
+    let appointed_reference = [];
+    let departments = [];
+    let degrees = [];
+    let themes = [];
     try {
-      await axios.get(url).then(r => {
-        setOptions(r.data)
-        })}
+      await axios.get(url_).then(r => {
+        getOptions = r.data
+        if (getOptions.length > 0) {
+          for (let i=0; i<getOptions.length; i++) {
+            if (!(bin.includes(getOptions[i]?.supervisor_gqw.name, 0))) {
+              options_superv.push({label: getOptions[i]?.supervisor_gqw.name, value: getOptions[i]?.supervisor_gqw.name})
+              bin.push(getOptions[i]?.supervisor_gqw.name)
+            }
+            if (!(themes.includes(getOptions[i]?.theme, 0))) {
+              themes.push(getOptions[i]?.theme)
+            }
+            if (!(appointed_reference.includes(getOptions[i]?.reference, 0))) {
+              appointed_reference.push(getOptions[i]?.reference)
+            }
+            if (!(bin_departments.includes(getOptions[i]?.supervisor_gqw.department_gqw.department, 0))) {
+              departments.push({label: getOptions[i]?.supervisor_gqw.department_gqw.department, value: getOptions[i]?.supervisor_gqw.department_gqw.department})
+              bin_departments.push(getOptions[i]?.supervisor_gqw.department_gqw.department)
+            }
+            if (!(bin_degree.includes(getOptions[i]?.supervisor_gqw.degree_gqw.degree, 0))) {
+              degrees.push({label: getOptions[i]?.supervisor_gqw.degree_gqw.degree, value: getOptions[i]?.supervisor_gqw.degree_gqw.degree})
+              bin_degree.push(getOptions[i]?.supervisor_gqw.degree_gqw.degree)
+            }
+        }}
+      })
+      setSupervisors(options_superv)
+      setReferences(appointed_reference)
+      setDepartments(departments)
+      setDegrees(degrees)
+      setThemes(themes)
+      // return [options_superv, appointed_reference, departments, degrees, themes]
+    }
     catch(err) {
       console.error('Error', err)
       alert(`Something wrong: ${err}`)
@@ -117,15 +139,13 @@ function App_main() {
   };
   
   useEffect(() => {
-    fetchAllData()    
-  }, [])
+    fetchAllData(url)
+  }, [url])
   
   // Fetch data by certain dynamic parameters
-  const fetchData = async({dataGQW}) => {   
+  const fetchData = async(dataGQW, url_) => {   
     setLoading(true) 
-    setNumber(0)
     const params = {}
-    let url = `http://127.0.0.1:8000/repositorium/`
 
     for (let i in dataGQW) {
       if (dataGQW[i]) {
@@ -134,38 +154,54 @@ function App_main() {
     }
 
     try {
-      await axios.get(url, {params} ).then(r => {
+      await axios.get(url_, {params} ).then(r => {
         console.log('response', r.data)
-        const response = r.data
+        let response = r.data
+        if ((response.length >= 2) && (!(response == 'Nothing to say')) && (!(response == "No findings by tag's query"))) {
+          response.sort(function (a,b) {
+          if (a?.theme < b?.theme) {
+            return -1;
+          }
+          if (a?.theme > b?.theme) {
+            return 1;
+          }
+          return 0;
+          })
+        }
         setGqwData(response)
         setLoading(false)
       })
-      }
+    }
     catch(err) {
-    console.error('Error', err)
-    alert(`Something wrong: ${err}`)
+      console.error('Error', err)
+      alert(`Something wrong: ${err}`)
     }
   };
 
   // Upload data
-  const uploadData = async({dataUpload}) => {
-    let url = 'http://127.0.0.1:8000/repositorium/post'
-    
+  const uploadData = async(dataUpload, url_) => {
     const formData = new FormData()
     formData.append('file', selectedFile)
-    console.log(formData)
 
     try {
-      let gol =0 
+      let empty_fields =0 
       for (let i in dataUpload) {
         if (!(dataUpload[i])) {
-          gol++
+          empty_fields++
         }
       }
-      if (gol == 0) {
-        await axios.post(`http://127.0.0.1:8000/repositorium/create_file`, formData)
-        await axios.post(url, dataUpload)
-        messageSystem('success', `Data is downloaded!`)
+      if (empty_fields == 0) {
+        if (!(getThemes.includes(dataUpload?.theme, 0))) {
+          messageSystem('loading', 'Download in progress', 'loadingData')
+          await axios.post(`${url_}/create_file`, formData)
+          await axios.post(`${url_}/post`, dataUpload)
+          messageSystem('success', `Data is downloaded!`, 'uploadSuccess')
+          fetchAllData(url)
+        }
+        else {
+          message.destroy('loadingData')
+          messageSystem('error', `${dataUpload?.theme} already exists!`, 'themeExists')
+        }
       }
       else {
         alert("Can't be transferred because fields is empty!")
@@ -175,10 +211,8 @@ function App_main() {
       console.error('Error', err)
       alert(`Something wrong: ${err}`)
     }
-  }
-  // const {theme, qualification, resp} = dataGQW; That's wrong
-  
-  
+  };
+
   const handleSubmit = async event => {
     event.preventDefault()
   };
@@ -193,6 +227,17 @@ function App_main() {
   const SelectChange_qualification_upload = (event) => {
     setDataUpload({...dataUpload, type_of_qualification: event})
   };
+  const SelectChange_supervisor_upload = (event) => {
+      setDataUpload({...dataUpload, supervisor: event})
+  };
+
+  const SelectChange_department_upload = (event) => {
+    setDataUpload({...dataUpload, department:event[0]})
+  };
+
+  const SelectChange_degree_upload = (event) => {
+    setDataUpload({...dataUpload, degree:event[0]})
+  };
 
   const SelectChange_supervisor = (event) => {
     let superv_list = []
@@ -200,42 +245,40 @@ function App_main() {
     setGQW({...dataGQW, supervisor_: superv_list.join(',')})
   };
 
-  const SelectChange_supervisor_upload = (event) => {
-      setDataUpload({...dataUpload, supervisor: event})
-  };
-  
   const handleChange_upload = (event) => {
     setDataUpload({...dataUpload, [event.target.name]: event.target.value})
   };
   
   const handleChangeFilter_top = (event) => {
-      setNumber(event)
+    setFilter(event*1)
   }
 
   const handleChangeFilter_percent = (event) => {
-      setNumber(event/100)
+    setFilter(event/100)
   }
 
   const onReset = () => {
     form.resetFields();
+    setGQW(initialFormState)
+    setFilter(0)
   };
   
-  const tag_array = (param) => {
-    let final_tag = []
-    for (let i in param) {
-      final_tag.push(param[i].tag_name)
-    }
-    return final_tag.join(', ')
-  };
+  const onResetUpload = () => {
+    form.resetFields()
+    setDataUpload(formUpload)
+  }
 
-  const onChange_checkbox = () => {
+  function onChange_checkboxSupervisor() {
     if (!isChecked) {
       return (
-        <Select name='qualification'
-        placeholder="Выберите научного руководителя"
-        onChange={SelectChange_supervisor_upload}
-        options={options_superv}
-        allowClear
+        <Select name='supervisor'
+          showSearch
+          placeholder="Выберите научного руководителя"
+          onChange={SelectChange_supervisor_upload}
+          options={getSupervisors}
+          optionFilterProp='label'
+          filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+          allowClear
         />
       )
     }
@@ -243,14 +286,58 @@ function App_main() {
       return (
       <div className='ml-6'>
         <Input className='my-1' name="supervisor" placeholder='Фамилия И.О. научного руководителя' onChange = {handleChange_upload} allowClear/>
-        <Input className='my-1' name="department" placeholder='Место работы' onChange = {handleChange_upload} allowClear/>
-        <Input className='my-1' name="degree" placeholder='Учёная степень научного руководителя' onChange = {handleChange_upload} allowClear/>
+        <Select name='department'
+          showSearch
+          mode='tags'
+          placeholder="Выберите или введите место работы"
+          onChange={SelectChange_department_upload}
+          options={getDepartments}
+          optionFilterProp='label'
+          filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+          allowClear
+        />
+        <div className="my-1">
+          <Select name='degree' 
+            showSearch
+            mode='tags'
+            placeholder="Выберите или введите учёную степень"
+            onChange={SelectChange_degree_upload}
+            options={getDegrees}
+            optionFilterProp='label'
+            filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+            allowClear
+          />
+        </div>
       </div>)
     }
   }
-
-
-  const outputCardList = (params, filter_number) => {
+  const paramsShow = (params, filter_number) => {
+    if (params.length > 0)
+    {
+      if ((params.length > 1) && (filter_number!=1)) {
+        return(
+        <List>
+          <div className='grid grid-cols-2 gap-2'>
+            {params.slice(0, filter_number).map((item) => <div key = {item.id} className='w-150 text-left text-wrap'>
+              {CardVKR(item)}
+            </div>)}
+          </div> 
+        </List>
+        )
+      }
+      else {
+        return(
+          <List>
+            <div className='place-items-center'>
+              {params.slice(0, filter_number).map((item) => <div key = {item.id} className='w-150 text-left text-wrap'>
+                {CardVKR(item)}
+              </div>)}
+            </div> 
+          </List>
+        )
+      }
+    }};
+  const CardList = (params, filter_number, isLoading) => {
       try {
         if (isLoading) {
           return (<div className='flex'>
@@ -261,28 +348,19 @@ function App_main() {
           if ((!filter_number) || (filter_number > params.length)) {
             filter_number = params.length
           }
-          else if (filter_number <= 1) {
+          else if (filter_number < 1) {
             filter_number = Math.round(params.length*filter_number)
           }
           return (
-            <div className="place-items-center m-2 text-center">
+            <>
+              <div className="self-center m-2 text-center place-items-center">
                 <p className='mb-2'>Количество результатов: {filter_number}</p>
-              <div className='w-100 bg-slate-500 rounded-lg'>            
-                <Collapse size='small' items={[{label: 'Фильтр', children: <ul className='text-left'><li className='mb-2'>Топ-{filter_number} записей: {<InputNumber name='top' min={1} max={params.length} onChange={handleChangeFilter_top}/>}</li><li>Процент от всех записей, %: {<InputNumber name='percent' min={1} max={100} onChange={handleChangeFilter_percent}/>} </li></ul>}]}/>
+                <div className='w-100 self-center bg-slate-500 rounded-lg self-center'>            
+                  <Collapse size='small' items={[{label: 'Фильтр', children: <div className='flex text-center'><span className='mb-2'>Топ-{filter_number} записей: {<InputNumber min={0} max={params.length} onChange={handleChangeFilter_top}/>} </span><span>Процент от всех записей, %: {<InputNumber min={1} max={100} onChange={handleChangeFilter_percent}/>} </span></div>}]}/>
+                </div>
               </div>
-              <List>
-                  {params.length >0 && params.slice(0, filter_number).map((item) => <div key = {item.id} className='w-170 my-4 text-left text-wrap'>
-                    <Card component='span' title={`ВКР_${item?.type_of_qualification}`}>
-                    <p className='my-2'><span className='font-bold'>Тема: </span>{item?.theme}</p>
-                    <div className='flex items-center my-2'><span className='font-bold'>Руководитель: </span><Collapse className='w-100' size='small' items={[{label:item?.supervisor_gqw.name, children: <ul><li>Место работы: {item?.supervisor_gqw.department}</li><li>Учёная степень: {item?.supervisor_gqw.degree}</li></ul>}]}/></div>
-                    <p className='my-2'><span className='font-bold'>Уровень образования: </span>{item?.type_of_qualification}</p>
-                    <p className='my-2 text-justify'><span className='font-bold'>Аннотация: </span>{item?.abstract}</p>
-                    <p className='my-2'><span className='font-bold'>Ссылка на аннотацию: </span><a className='text-justify' href={`http://localhost:5173/pdf_docs/${item?.reference}`} target="_blank" >{item?.reference}</a></p>
-                    <p className='my-2'><span className='font-bold'>Тэги: </span>{tag_array(item?.tag_gqw)}</p>
-                  </Card>
-                  </div>)}
-              </List>
-            </div>
+              {paramsShow(params, filter_number)}
+            </>
             )
       }}
       catch (err) {
@@ -295,8 +373,8 @@ function App_main() {
   const main = () => {
     if (!isUploading) {
       return (
-        <div className="place-items-center">
-          <Switch className='w-36' unCheckedChildren="Поиск ВКР" onChange={() => {setUploading(!isUploading)}}/>
+        <div className='flex flex-col place-items-center my-2'>
+          <Switch className='w-36 self-center' unCheckedChildren="Поиск ВКР" onChange={() => {setUploading(!isUploading)}}/>
           <div className='flex w-290 bg-slate-500 p-6 m-2 rounded-md text-wrap'>
             <div className='w-180'>
               <Form
@@ -318,16 +396,18 @@ function App_main() {
                   >
                     <Option value="Бакалавриат">Бакалавриат</Option>
                     <Option value="Магистратура">Магистратура</Option>
-                    
                   </Select>
                 </Form.Item>
                 <Form.Item name="supervisor_" label="Научный руководитель">
                   <Select
-                  mode="multiple"
-                  placeholder="Выберите научного руководителя"
-                  onChange={SelectChange_supervisor}
-                  options={options_superv}
-                  allowClear
+                    showSearch
+                    mode="multiple"
+                    placeholder="Выберите научного руководителя"
+                    onChange={SelectChange_supervisor}
+                    options={getSupervisors}
+                    optionFilterProp='label'
+                    filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+                    allowClear
                   />
                 </Form.Item>
                 <Form.Item name="tags_" label="Тэги">
@@ -336,10 +416,10 @@ function App_main() {
                 <Form.Item {...tailLayout}>
                   <Space>
                     <Button onClick = {() =>{
-                      fetchData({dataGQW})
+                      fetchData(dataGQW, url)
                       console.log("here",dataGQW)
-                    }
-                      } type="primary" htmlType="submit">
+                      setFilter(0)
+                    }} type="primary" htmlType="submit">
                       Submit
                     </Button>
                     <Button htmlType="button" onClick={onReset}>
@@ -349,23 +429,15 @@ function App_main() {
                 </Form.Item>
               </Form>
             </div>
-            <div className="w-120 text-justify text-white">
-              <h2 className='text-center font-semibold text-lg'>Памятка</h2>
-              <ul id="note-list" className='list-disc'>
-                <li className='my-2'>Поиск по теме ВКР осуществляется на основе ключевого слова; можно вводить значения в следующем формате: Ключевое слово1, Ключевое слово2</li>
-                <li className='my-2'>В поле "Квалификация" можно выбрать одно из значений: Бакалавриат или Магистратура</li>
-                <li className='my-2'>В поле "Научный руководитель" можно выбрать несколько научных руководителей</li>
-                <li className='my-2'>Тэги помогают с поиском ВКР, если отсутствуют ключевые слова (например, при вводе тэга "Shipment" программа выведет "Адаптивная модель грузоперевозок"); можно вводить значения в следующем формате: тэг1, тэг2</li>
-              </ul>
-            </div>
+            {util.noteGet()}
           </div>
-          {outputCardList(gqwForm, getNumber)}
+          {CardList(gqwForm, filter, isLoading)}
       </div>
       ) 
     }
     else {
       return(
-        <div className="place-items-center bg-amber-500 h-full">
+        <div className="flex flex-col pt-2 place-items-center bg-amber-400">
           <Switch className='w-36' checkedChildren="Добавление ВКР" onChange={() => {setUploading(!isUploading)}}/>
           {contextHolder}
           <div className='flex w-290 bg-slate-500 p-6 m-2 rounded-md text-wrap'>
@@ -383,18 +455,18 @@ function App_main() {
                 </Form.Item>
                 <Form.Item name="type_of_qualification" label="Квалификация">
                   <Select
+                    name='quallification'
                     placeholder="Выберите квалификацию"
                     onChange = {SelectChange_qualification_upload}
                     allowClear
                   >
                     <Option value="Бакалавриат">Бакалавриат</Option>
                     <Option value="Магистратура">Магистратура</Option>
-                    
                   </Select>
                 </Form.Item>
                 <Form.Item>
                   <Checkbox onChange={() => {setChecked(!isChecked)}}>Руководителя нет в списке</Checkbox>
-                  {onChange_checkbox(isChecked)}
+                  {onChange_checkboxSupervisor()}
                 </Form.Item>
                 <Form.Item name="abstract" label="Аннотация">
                   <Input name="abstract" placeholder='Введите аннотацию' onChange = {handleChange_upload} allowClear/>
@@ -410,30 +482,20 @@ function App_main() {
                 <Form.Item {...tailLayout}>
                   <Space>
                     <Button onClick = {() =>{
-                      uploadData({dataUpload})
+                      uploadData(dataUpload, url)
                       console.log("transfer",dataUpload)
                     }
                       } type="primary" htmlType="submit">
                       Submit
                     </Button>
-                    <Button htmlType="button" onClick={onReset}>
+                    <Button htmlType="button" onClick={onResetUpload}>
                       Reset
                     </Button>
                   </Space>
                 </Form.Item>
               </Form>
             </div>
-            <div className="w-130 text-justify text-white">
-                <h2 className='text-center font-semibold text-lg'>Памятка</h2>
-                <ul id="note-list" className='list-disc'>
-                  <li className='my-2'>Тема ВКР должна начинаться с заглавной буквы</li>
-                  <li className='my-2'>В поле "Квалификация" можно выбрать одно из значений: Бакалавриат или Магистратура</li>
-                  <li className='my-2'>В поле "Научный руководитель" можно выбрать только одного руководителя; если руководителя нет в списке, то необходимо поставить 'галочку' в окне 'Руководителя нет в списке' и заполнить его данные: Фамилию И.О., место работы и учёную степень</li>
-                  <li className='my-2'>Аннотация должна совпадать с текстом аннотации ВКР</li>
-                  <li className='my-2'>Принимаются файлы только в формате .pdf; название файла должно быть на английском языке без ФИО автора ВКР (например, тема Адаптивная модель грузоперевозок будет иметь название 'Adaptive_model.pdf')</li>
-                  <li className='my-2'>Тэги вводятся на английском языке исходя из тематики ВКР (например, тема Адаптивная модель грузоперевозок может иметь тэги 'Cargo, Shipment')</li>
-                </ul>
-              </div>
+           {util.noteUpload()}
           </div>
         </div>
       )

@@ -1,0 +1,22 @@
+services:
+   front-repositorium:
+      container_name: f-reposit
+      build:
+        context: .
+        dockerfile: Dockerfile
+      networks:
+       - rep-network
+      ports:
+       - 5174:5173
+      restart: always
+      volumes:
+       - ./public/pdf_docs:/Frontend/public/pdf_docs
+  
+networks:
+  rep-network:
+    name: rep-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.7.0.0/16
+    # external: true

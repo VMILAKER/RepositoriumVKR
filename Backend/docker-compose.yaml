@@ -1,0 +1,59 @@
+# version: '3.8'
+
+services:
+  app:
+   container_name: b-repositorium
+   build: 
+     context: .
+     dockerfile: Dockerfile
+   depends_on:
+     - db
+   volumes:
+    - ./app:/Backend/app
+   ports:
+    - '8001:8000'
+   networks:
+    - rep-network
+   restart: always
+
+  db:
+    container_name: postgres-repositorium
+    image: pgvector/pgvector:pg17
+    # image: postgres:latest
+    environment:
+      POSTGRES_USER: dynamo
+      POSTGRES_PASSWORD: kds041
+      POSTGRES_DB: repositorium
+    ports:
+     - '5433:5432'
+    volumes:
+      - ./volume:/var/lib/postgresql/data
+    networks:
+     - rep-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dynamo -d repositorium"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+  nginx-client:
+    image: nginx:latest
+    ports:
+     - '81:80'
+    volumes:
+    - "./app:/usr/share/nginx/html"
+    - "./nginx.conf:/etc/nginx/nginx.conf"
+    networks:
+     - rep-network
+    restart: always
+
+networks:
+  rep-network:
+    name: rep-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.7.0.0/16
+    
+
+   
