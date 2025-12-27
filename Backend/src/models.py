@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, String, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, mapped_column
 # from pgvector.sqlalchemy import Vector
@@ -30,7 +30,6 @@ class GQW_model(Base):
 
     tag_gqw = relationship('GQW_tag', secondary='model_tag', back_populates='gqw_id', lazy='joined')
     supervisor_gqw = relationship('GQW_supervisor', lazy='joined')
-
 
 class GQW_qualification(Base):
     __tablename__ = 'gqw_qualifications'
@@ -83,3 +82,24 @@ class Supervisor_degree(Base):
 
     id = Column(Integer, index=True, primary_key=True)
     degree = Column(String)
+
+
+class PassKeys(Base):
+    __tablename__ = 'pass_key'
+
+    id = Column(UUID(as_uuid=True), index=True,
+                default=uuid.uuid4, primary_key=True)
+    token_encoded = Column(String)
+    date_of_get = Column(DateTime)
+    date_expired = Column(DateTime)
+    gqw_id = Column(UUID(as_uuid=True), index=True)
+ 
+    visitor_f= Column(String, ForeignKey('visitor_data.visitor_id'))
+    visitor_gqw = relationship('Visitor', lazy='joined')
+    
+class Visitor(Base):
+    __tablename__ = 'visitor_data'
+
+    id = Column(UUID(as_uuid=True), index=True,
+                default=uuid.uuid4)
+    visitor_id = Column(String, index=True, primary_key=True)

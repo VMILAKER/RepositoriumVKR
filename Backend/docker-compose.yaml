@@ -19,7 +19,6 @@ services:
   db:
     container_name: postgres-repositorium
     image: pgvector/pgvector:pg17
-    # image: postgres:latest
     environment:
       POSTGRES_USER: dynamo
       POSTGRES_PASSWORD: kds041
@@ -41,7 +40,8 @@ services:
     ports:
      - '81:80'
     volumes:
-    - "./app:/usr/share/nginx/html"
+    - "./app:/usr/share/nginx/html/"
+    - "./app/full_pdf:/usr/share/nginx/html/full_pdf"
     - "./nginx.conf:/etc/nginx/nginx.conf"
     networks:
      - rep-network

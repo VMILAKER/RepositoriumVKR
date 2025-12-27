@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-POSTGRESQL_URL = "postgresql://postgres:kds041@localhost/postgres"
+POSTGRESQL_URL = "postgresql://dynamo:kds041@postgres-repositorium/repositorium"
 
 engine = create_engine(POSTGRESQL_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
 
-
 class GraduateQuallificationWork(BaseModel):
     theme: str
     supervisor: str
@@ -11,3 +10,12 @@ class GraduateQuallificationWork(BaseModel):
     abstract: str
     reference: str
     tags: str
+
+class PassKey(BaseModel):
+    visitor_id: str
+    password: str
+    gqw_id: str
+
+class CheckPassword(BaseModel):
+    password: str
+    gqw_id: str

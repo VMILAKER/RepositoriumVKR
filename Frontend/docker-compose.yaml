@@ -9,8 +9,8 @@ services:
       ports:
        - 5174:5173
       restart: always
-      volumes:
-       - ./public/pdf_docs:/Frontend/public/pdf_docs
+      # volumes:
+      #  - ./public/pdf_docs:/Frontend/public/pdf_docs
   
 networks:
   rep-network:

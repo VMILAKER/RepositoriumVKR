@@ -1,5 +1,4 @@
-import {message} from 'antd'
-
+// import { argon2id } from 'argon2-browser';
 
 export const noteGet = () => {
   return (
@@ -31,3 +30,31 @@ export const noteUpload = () => {
   )
 }
   
+// export async function hashPassword(password) {
+//     try {
+//         const hash = await argon2id.hash({
+//             pass: password,
+//             salt: window.crypto.getRandomValues(new Uint8Array(16)), // Generate a secure random salt
+//             time: 2, // Time cost
+//             mem: 65536, // Memory cost in KB
+//             parallelism: 1, // Number of parallel threads
+//             hashLen: 32, // Length of the hash
+//             type: argon2id // Using Argon2id variant
+//         });
+//         return hash.encoded; // Return the encoded hash
+//     } catch (error) {
+//         console.error('Hashing failed:', error);
+//     }
+// }
+
+// export async function verifyPassword(storedHash, password) {
+//     try {
+//         const isMatch = await argon2id.verify({
+//             pass: password,
+//             encoded: storedHash // The encoded hash for comparison
+//         });
+//         return isMatch; // Returns true if the password matches, false otherwise
+//     } catch (error) {
+//         console.error('Verification failed:', error);
+//     }
+// }

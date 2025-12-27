@@ -77,7 +77,6 @@ def build_filter(session, filter_dict: dict) -> List:
     filters = []
     for key, value in filter_dict.items():
         if value:
-            # print(f'{key}: {value}')
             if isinstance(filter_dict[key], list):
                 if key in ['theme', 'supervisor']:
                     filter_theme = []
@@ -97,11 +96,17 @@ def build_filter(session, filter_dict: dict) -> List:
             else:
                 if key =='type_of_qualification':
                     filters.append(getattr(Models.GQW_qualification, 'qualification') == value)
+                # elif key == 'current_time':
+                #     print(value)
+                #     filters.append(Models.PassKeys.date_expired > value)
+                # elif key == 'visitor_id':
+                #     filters.append(getattr(Models.Visitor, 'visitor_id') == value)
+                #     print(value)
                 else:
                     filters.append(getattr(Models.GQW_model, key) == value)
     return filters
 
 
-if __name__ == '__main__':
-    insert_data_db()
+# if __name__ == '__main__':
+#     insert_data_db()
 

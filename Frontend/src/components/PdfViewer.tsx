@@ -1,0 +1,34 @@
+import { Viewer, Worker, RenderPageProps  } from '@react-pdf-viewer/core';
+import '@react-pdf-viewer/core/lib/styles/index.css';
+
+const renderPage = (props: RenderPageProps) => {
+    return (
+        <>
+            {props.canvasLayer.children}
+            <div style={{ userSelect: 'none' }}>
+                {props.textLayer.children}
+            </div>
+            {props.annotationLayer.children}
+        </>
+    );
+};
+
+const PdfViewer = () => {
+   const receivedValue = localStorage.getItem("sharedValue");
+   localStorage.clear()
+   return (
+      <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js">
+        <div style={{
+                border: '1px solid rgba(0, 0, 0, 0.3)',
+            }}>
+            <Viewer 
+                fileUrl={`http://10.6.41.116:81/${receivedValue}`}
+                renderPage={renderPage}
+            />
+        </div>
+      </Worker>
+   )
+}
+
+export {PdfViewer};
+
