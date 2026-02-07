@@ -2,7 +2,7 @@ FROM node:latest AS builder
 
 WORKDIR /Frontend
 
-ENV PATH ./node_modules/.bin:$PATH
+ENV PATH=./node_modules/.bin:$PATH
 COPY package*.json .
 
 RUN npm install --silent

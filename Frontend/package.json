@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.1.0",
     "@react-pdf-viewer/core": "^3.12.0",
+    "@react-pdf-viewer/page-navigation": "^3.12.0",
     "@tailwindcss/vite": "^4.1.11",
     "antd": "^5.26.7",
     "axios": "^1.11.0",
@@ -39,7 +41,10 @@
       "target": "http://10.6.41.116:8001"
     },
     "/pdf_viewer.*": {
-      "target": ["http://localhost:81", "http://localhost:81/full_pdf"]
+      "target": [
+        "http://localhost:81",
+        "http://localhost:81/full_pdf"
+      ]
     }
   }
 }

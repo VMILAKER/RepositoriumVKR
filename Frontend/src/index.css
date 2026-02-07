@@ -8,10 +8,21 @@
   color-scheme: light dark;
   color: rgba(0, 0, 0, 0.87);
   background-color: #B7D4E6;
-  /* background: url('C:\Users\Sofi\OneDrive\Desktop\Repositorium\Frontend\vite-project\src\assets\background.png') no-repeat center/cover; */
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+
+.merriweather{
+  font-family: "Noto Serif", serif;
+  font-optical-sizing: auto;
+  font-size: large;
+  font-weight: 600;
+  font-style: normal;
+  color: white;
+  margin-bottom: 8px;
+  place-self: center;
 }

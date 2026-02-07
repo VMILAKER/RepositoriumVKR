@@ -1,14 +1,13 @@
-// import { argon2id } from 'argon2-browser';
-
 export const noteGet = () => {
   return (
-    <div className="w-120 text-justify text-white">
+    <div className="w-120 text-justify text-black">
         <h2 className='text-center font-semibold text-lg'>Памятка</h2>
         <ul id="note-list" className='list-disc'>
-          <li className='my-2'>Поиск по теме ВКР осуществляется на основе ключевого слова; можно вводить значения в следующем формате: Ключевое слово1, Ключевое слово2</li>
+          <li className='my-2'>Поиск по названию ВКР осуществляется как на полном названии ВКР, так и на основе ключевого слова из названия; можно вводить ключевые слова в следующем формате: Ключевое слово1, Ключевое слово2</li>
           <li className='my-2'>В поле "Квалификация" можно выбрать одно из значений: Бакалавриат или Магистратура</li>
           <li className='my-2'>В поле "Научный руководитель" можно выбрать несколько научных руководителей</li>
-          <li className='my-2'>Тэги помогают с поиском ВКР, если отсутствуют ключевые слова (например, при вводе тэга "Shipment" программа выведет "Адаптивная модель грузоперевозок"); можно вводить значения в следующем формате: тэг1, тэг2</li>
+          <li className='my-2'>Тэги помогают с поиском ВКР, если отсутствуют ключевые слова (например, при вводе тэга "Грузоперевозки" программа выведет "Адаптивная модель грузоперевозок"); можно выбрать несколько тэгов</li>
+          <li className='my-2'>ВАЖНО! Если тэг отсутствует в предложенном списке, то его можно ввести в поле "Тэги". В данном случае будут показаны работы с наиболее близкими по тематике тэгами</li>
         </ul>
       </div>
   )
@@ -19,42 +18,9 @@ export const noteUpload = () => {
      <div className="w-130 text-justify text-white">
         <h2 className='text-center font-semibold text-lg'>Памятка</h2>
         <ul id="note-list" className='list-disc'>
-          <li className='my-2'>Тема ВКР должна начинаться с заглавной буквы</li>
-          <li className='my-2'>В поле "Квалификация" можно выбрать одно из значений: Бакалавриат или Магистратура</li>
-          <li className='my-2'>В поле "Научный руководитель" можно выбрать только одного руководителя; если руководителя нет в списке, то необходимо поставить 'галочку' в окне 'Руководителя нет в списке' и заполнить его данные: Фамилию И.О., место работы и учёную степень</li>
-          <li className='my-2'>Аннотация должна совпадать с текстом аннотации ВКР</li>
-          <li className='my-2'>Принимаются файлы только в формате .pdf; название файла должно быть на английском языке без ФИО автора ВКР (например, тема Адаптивная модель грузоперевозок будет иметь название 'Adaptive_model.pdf')</li>
-          <li className='my-2'>Тэги вводятся на английском языке исходя из тематики ВКР (например, тема Адаптивная модель грузоперевозок может иметь тэги 'Cargo, Shipment')</li>
+          <li className='my-2'>В поле "Научный руководитель" можно выбрать только одного руководителя; если руководителя нет в списке, то необходимо поставить 'галочку' в окне 'Руководителя нет в списке' и заполнить его данные: Фамилия Имя Отчество, место работы и учёная степень</li>
+          <li className='my-2'>Принимаются файлы только в формате .pdf; название файла должно быть на английском языке и соответствовать следующему шаблону: год выпуска_VKR_группа_фамилия.pdf (например, 2023_VKR_B19_803_Ivanov.pdf)</li>   
         </ul>
       </div>
   )
-}
-  
-// export async function hashPassword(password) {
-//     try {
-//         const hash = await argon2id.hash({
-//             pass: password,
-//             salt: window.crypto.getRandomValues(new Uint8Array(16)), // Generate a secure random salt
-//             time: 2, // Time cost
-//             mem: 65536, // Memory cost in KB
-//             parallelism: 1, // Number of parallel threads
-//             hashLen: 32, // Length of the hash
-//             type: argon2id // Using Argon2id variant
-//         });
-//         return hash.encoded; // Return the encoded hash
-//     } catch (error) {
-//         console.error('Hashing failed:', error);
-//     }
-// }
-
-// export async function verifyPassword(storedHash, password) {
-//     try {
-//         const isMatch = await argon2id.verify({
-//             pass: password,
-//             encoded: storedHash // The encoded hash for comparison
-//         });
-//         return isMatch; // Returns true if the password matches, false otherwise
-//     } catch (error) {
-//         console.error('Verification failed:', error);
-//     }
-// }
+};

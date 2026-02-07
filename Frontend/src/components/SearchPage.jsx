@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import axios from 'axios'
-import { Button, Form, Input, Select, Space,List, Card, Spin, Collapse,Modal, InputNumber, message } from 'antd';
+import { Button, Form, Input, Select, Space,List, Card, Spin, Collapse,Modal, InputNumber, Popover, notification } from 'antd';
+import {InfoCircleOutlined} from '@ant-design/icons'
 import * as util from './Utilities.jsx';
 
 
@@ -11,10 +12,10 @@ const initialFormState = {
   tags_:''
 };
 
-const byVisitorId = {
+const uploadKey = {
   visitor_id: '',
-  password: '',
-  gqw_id: ''
+  gqw_id: '',
+  theme: ''
 }
 const checkKey = {
   visitor_id: '',
@@ -23,25 +24,56 @@ const checkKey = {
   theme: ''
 };
 
+const stylesShared = {
+  label:{
+      color:'#ffffff',
+  }
+};
+
 
 function App_main() {
   const { Option } = Select;
+  const refContainer= useRef(null);
   const [dataGQW, setGQW] = useState(initialFormState);
   const [gqwForm, setGqwData] = useState([]);
   const [filter, setFilter] = useState(0);
   const [isLoading, setLoading] = useState(false);
   const [form] = Form.useForm();
-  const [messageApi, contextHolder] = message.useMessage();
-  const [getSupervisors, setSupervisors] = useState([])
-  const [getReferences, setReferences] = useState([])
-  const [getDepartments, setDepartments] = useState([])
-  const [getDegrees, setDegrees] = useState([])
-  const [getThemes, setThemes] = useState([])
+  const [api, contextHolder_notification] = notification.useNotification();
+  const [getThemes, setThemes] = useState([]);
+  const [getSupervisors, setSupervisors] = useState([]);
+  const [getTags, setTags] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [getVisitorUpload, uploadVisitor] = useState(uploadKey);
   const [visitor, setVisitor] = useState(checkKey);
-  const [passkey, setPasskey] = useState([])
+  const [passkey, setPasskey] = useState([]);
+  const [modal, contextHolder_modal] = Modal.useModal();
+  const [widthB, setWidth] = useState(0);
 
-
+  const modalConfig = (item, name) => {
+    visitor['gqw_id'] = item
+    visitor['theme'] =name
+    getVisitorUpload['gqw_id'] = item
+    getVisitorUpload['theme'] = name
+    
+    modal.confirm({
+      title: 'Получить полную версию ВКР',
+      closable: {'aria-label': 'Custom Close Button' },
+      width: 450,
+      state: {blur: false},
+      okText: 'Проверить ключ',
+      onOk() {getPasskey(url, visitor)},
+      cancelText: "Отмена",
+      onCancel() {handleCancel},
+      content: (
+        <div>
+          <Input ref={refContainer} className='my-2' name="passkey" placeholder='Введите ключ доступа' onChange={inputPasskey} allowClear/>  
+          <Button style={{width: 370}} color="primary" variant='solid' onClick={() => uploadPasskey(url, getVisitorUpload)}>Получить ключ доступа к полному тексту ВКР</Button>
+        </div>
+        )
+      
+    })
+  }
   const url = "http://10.6.41.116:8001/repositorium"
 
   const layout = {
@@ -53,6 +85,12 @@ function App_main() {
     wrapperCol: { offset: 6, span: 12 },
     };
 
+  const openNotificationWithIcon = (type, param) => {
+    api[type]({
+      description:
+        param,
+    });
+  };
   
   const get_visitor_id = async() => {
      const fpPromise = import('https://openfpcdn.io/fingerprintjs/v5')
@@ -60,25 +98,11 @@ function App_main() {
 
     await fpPromise.then(fp => fp.get())
       .then(result => {
-        const visitorId = result.visitorId   
         setVisitor({...visitor, visitor_id: (result.visitorId).toString()})
-        byVisitorId['visitor_id'] = visitorId
-       console.log(byVisitorId['visitor_id'])
+        uploadVisitor({...getVisitorUpload, visitor_id: (result.visitorId).toString()})
+
       }
     )
-  };
-  
-  function reducedHash() {
-    let length=8
-    let charset='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    let password_new = ''
-    
-    for (let i=0; i < length; i++) {
-      password_new +=charset.charAt(Math.floor(Math.random() * (charset.length)))
-    }
-
-    console.log(password_new)
-    visitor['password'] = password_new
   };
   
 
@@ -89,11 +113,8 @@ function App_main() {
         getOptions = r.data
         if (getOptions.length > 0) {
           setThemes(getOptions[0])
-          setReferences(getOptions[1])
-          setDepartments(getOptions[2])
           setSupervisors(getOptions[3])
-          setDegrees(getOptions[4])
-          
+          setTags(getOptions[5])
         }
       })
     }
@@ -108,6 +129,12 @@ function App_main() {
     get_visitor_id()
   }, [url]);
   
+  useLayoutEffect(() => {
+    if (refContainer.current) {
+      setWidth(refContainer.current.offsetWidth)
+    }
+  }, []);
+
   const fetchData = async(dataGQW, url_) => {   
     setLoading(true) 
     const params = {}
@@ -120,7 +147,7 @@ function App_main() {
 
     try {
       await axios.get(url_, {params} ).then(r => {
-        console.log('response', r.data)
+        // console.log('response', r.data)
         let response = r.data
         if ((response.length >= 2) && (!(response == 'Nothing to say')) && (!(response == "No findings by tag's query"))) {
           response.sort(function (a,b) {
@@ -143,14 +170,15 @@ function App_main() {
     }
   };
   
-  const uploadPasskey = async(url_) => { 
+  const uploadPasskey = async(url_, param) => { 
     try {
-      reducedHash()
-      alert(`Ваш пароль для '${visitor['theme']}': ${visitor['password']}`)
-      console.log(visitor)
-      await axios.post(`${url_}/add_passkey`, visitor)
-      let resp = getPasskeyInitial(url_, visitor)
-      paramsShow(gqwForm, gqwForm.length, resp)
+      // console.log(param)
+      await axios.post(`${url_}/add_passkey`, param).then(r => {
+        let responce = r.data
+        openNotificationWithIcon('info', `Ваш пароль для '${param['theme']}': ${responce}`)
+        let resp = getPasskeyInitial(url_, param)
+        paramsShow(gqwForm, gqwForm.length, resp)
+      })
       setIsModalOpen(false);
     }
     catch(err) {
@@ -163,7 +191,7 @@ function App_main() {
     try {
        await axios.get(`${url_}/get_gqw_by_passkey?visitor_id=${param['visitor_id']}`, {param} ).then(r => {
         let resp = r.data
-        console.log(resp)
+        // console.log(resp)
         if (!(resp == 'No data'))
           setPasskey(resp)
        })
@@ -176,39 +204,28 @@ function App_main() {
 
   const getPasskey = async(url_, param) => {
     try {
-      console.log(param)
+      // console.log(param)
        await axios.get(`${url_}/get_gqw_by_passkey?password=${param['password']}&gqw_id=${param['gqw_id']}`, {param} ).then(r => {
         let resp = r.data
-        console.log(resp)
+        // console.log(resp)
         if (!(resp == 'Unvalid key')) {
-          axios.post(`${url}/add_passkey`, visitor)
-
-          let resp_init = getPasskeyInitial(url_, param)
-          alert('Успешно добавлена полная версия')
-          paramsShow(gqwForm, gqwForm.length, resp_init)          
+          axios.post(`${url_}/add_passkey`, param).then(r=> {
+            let resp_init = getPasskeyInitial(url_, param)
+            openNotificationWithIcon('success', 'Успешно добавлена полная версия')
+            paramsShow(gqwForm, gqwForm.length, resp_init)
+          })
+          setIsModalOpen(false);        
         }
-        if (resp === 'Unvalid key') {
-          alert('Unvalid key')
+        else {
+          openNotificationWithIcon('error', 'Неправильный ключ')
+          setIsModalOpen(false); 
         }
-        setIsModalOpen(false)
        })
     }
     catch(err) {
       console.error('Error', err)
       alert(`Something wrong: ${err}`)
     }
-  };
-
-  const showModal = (item, name) => {
-    visitor['gqw_id'] = item
-    byVisitorId['gqw_id'] = item
-    setVisitor({...visitor, theme:name})
-    setIsModalOpen(true);
-  };
-
-  const handleOk = () => {
-    getPasskey(url, byVisitorId)
-    setIsModalOpen(false);
   };
 
   const handleCancel = (target) => {
@@ -224,6 +241,12 @@ function App_main() {
     setGQW({...dataGQW, [event.target.name]: event.target.value})
   };
 
+  const SelectChange_theme = (event) => {
+    let theme_list = []
+    theme_list.push(event)
+    setGQW({...dataGQW, theme_: theme_list.join(',')})
+  };
+
   const SelectChange_qualification = (event) => {
     setGQW({...dataGQW, qualification_: event})
   };
@@ -232,6 +255,13 @@ function App_main() {
     let superv_list = []
     superv_list.push(event)
     setGQW({...dataGQW, supervisor_: superv_list.join(',')})
+  };
+
+
+  const SelectChange_tags = (event) => {
+    let tag_list = []
+    tag_list.push(event)
+    setGQW({...dataGQW, tags_:tag_list.join(',')})
   };
 
   const handleChangeFilter_top = (event) => {
@@ -243,7 +273,7 @@ function App_main() {
   };
   
   const inputPasskey = (event) => {
-    byVisitorId['password'] = event.target.value
+    visitor['password'] = event.target.value
   };
 
   const onReset = () => {
@@ -256,7 +286,32 @@ function App_main() {
     localStorage.setItem('sharedValue', str)
   };
   
+  const onChange_filter = (num) => {
+    let number = num.toString()
+    if (number.length >= 2) {
+      if ((['0', '5', '6', '7', '8', '9'].includes(number.slice(-1))) || (['11', '12', '13', '14'].includes(number.slice(-2)))) {
+        return 'работ'
+      }
+      else if ((['2', '3', '4'].includes(number.slice(-1))) && !(['11', '12', '13', '14'].includes(number.slice(-2)))) {
+        return 'работы'
+      }
+      else if ((['1'].includes(number.slice(-1))) && !(['11'].includes(number.slice(-2)))) {
+        return 'работу'
+      }
+    }
+    else if ((number.length === 1))
+      if (['1'].includes(number)) {
+        return 'работу'
+      }
+      else if (['2', '3', '4'].includes(number)) {
+        return 'работы'
+      }
+      else if (['0', '5', '6', '7', '8', '9'].includes(number)) {
+        return 'работ'
+      }
+  }
   function CardVKR(item, key_list) {
+
     const tag_array = (param) => {
       let final_tag = []
       for (let i in param) {
@@ -285,21 +340,9 @@ function App_main() {
           <p className='my-2 text-justify'><span className='font-bold'>Аннотация: </span>{item?.abstract}</p>
           {check_key_card(key_list, item?.id, item?.reference)}
           <p className='my-2'><span className='font-bold'>Тэги: </span>{tag_array(item?.tag_gqw)}</p>
-          <div className='mb-2 place-self-center'><Button color="primary" variant='outlined' onClick={() => showModal(item?.id, item?.theme)} ><span>Получить полную версию ВКР</span></Button></div>
+          <div className='flex mb-2 place-self-center'><Button color="primary" variant='outlined' onClick={() => modalConfig(item?.id, item?.theme)} ><span>Получить полную версию ВКР</span></Button></div>
         </Card>
-        <Modal
-          title="Получить полную версию ВКР"
-          closable={{ 'aria-label': 'Custom Close Button' }}
-          open={isModalOpen}
-          onOk={handleOk}
-          okText='Проверить ключ'
-          cancelText='Отмена'
-          onCancel={handleCancel}
-        >
-    
-          <Input className='my-2' name="passkey" placeholder='Введите ключ доступа' onChange={inputPasskey} allowClear/>  
-          <Button color="primary" variant='solid' onClick={() => uploadPasskey(url)}>Получить ключ доступа к полному тексту ВКР</Button>
-        </Modal>
+        
       </>
     )
   };
@@ -337,7 +380,7 @@ function App_main() {
       try {
         if (isLoading) {
           return (<div className='flex'>
-            <p className='text-[#242424] mx-2'>Loading</p><Spin size='large'/>
+            <p className='text-[#242424] mx-2'>Загрузка</p><Spin size='large'/>
           </div>)
           }
         else {
@@ -351,8 +394,9 @@ function App_main() {
             <>
               <div className="self-center m-2 text-center place-items-center">
                 <p className='mb-2'>Количество результатов: {filter_number}</p>
-                <div className='w-100 self-center bg-slate-500 rounded-lg self-center'>            
-                  <Collapse size='small' items={[{label: 'Фильтр', children: <div className='flex text-center'><span className='mb-2'>Показать {filter_number} работ: {<InputNumber min={0} max={params.length} onChange={handleChangeFilter_top}/>} </span><span>Процент от всех записей, %: {<InputNumber min={1} max={100} onChange={handleChangeFilter_percent}/>} </span></div>}]}/>
+                <div className='w-100 self-center bg-slate-500 rounded-lg place-items-center'>            
+                  <Collapse className='w-100' items={[{label: <span className='text-white'>Фильтр</span>, children: <div className='flex text-center justify-center w-90'><span className='mb-2 place-self-center'>Показать {<InputNumber min={0} max={params.length} onChange={handleChangeFilter_top}/>} {onChange_filter(filter_number)}</span></div>}]}/>
+                  {/* <span>Процент от всех записей, %: {<InputNumber min={1} max={100} onChange={handleChangeFilter_percent}/>} </span> */}
                 </div>
               </div>
               {paramsShow(params, filter_number, list_key)}
@@ -361,7 +405,7 @@ function App_main() {
       }}
       catch (err) {
         return (
-          <p id='noData' className='text-center text-xl'>Sorry, there is no data available </p>
+          <p id='noData' className='text-center text-xl'>Извините, нет доступных данных </p>
         )
       }
   };
@@ -369,8 +413,9 @@ function App_main() {
   const main = () => {
       return (
         <div className='flex flex-col place-items-center my-2'>
-          {contextHolder}
-          <div className='flex w-290 bg-slate-500 p-6 m-2 rounded-md text-wrap'>
+          <div className='w-200 bg-slate-500 p-6 m-2 rounded-md text-wrap'>
+            <h2 className='merriweather'>Репозиторий ВКР</h2>
+            <div className='place-items-center'>  
             <div className='w-180'>
               <Form
                 {...layout}
@@ -380,52 +425,111 @@ function App_main() {
                 onSubmitCapture={handleSubmit}
                 autoComplete='off'
               >
-                <Form.Item name="theme" label="Тема">
-                  <Input name="theme_" placeholder='Тема ВКР' onChange = {handleChange} allowClear/>
+                <Form.Item name="theme">
+                  <div className='flex justify-around w-140'>
+                    <div className='w-120'>
+                      <Select
+                        showSearch
+                        mode="multiple"
+                        placeholder="Тема ВКР"
+                        onChange={SelectChange_theme}
+                        options={getThemes}
+                        optionFilterProp='label'
+                        filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+                        allowClear
+                      />
+                    </div>
+                    <div>
+                      <Popover content={<li className='w-90 ml-4 text-wrap'>В поле "Тема ВКР" можно выбрать несколько тем</li>}>
+                        <InfoCircleOutlined style={{fontSize: '28px', color: 'white'}}/>
+                      </Popover>
+                    </div>
+                  </div>             
                 </Form.Item>
-                <Form.Item name="qualification" label="Квалификация">
-                  <Select
-                    placeholder="Выберите квалификацию"
-                    onChange = {SelectChange_qualification}
-                    allowClear
-                  >
-                    <Option value="Бакалавриат">Бакалавриат</Option>
-                    <Option value="Магистратура">Магистратура</Option>
-                  </Select>
+                <Form.Item name="qualification">
+                  <div className='flex justify-around w-140'>
+                    <div className='w-120'>
+                      <Select
+                        placeholder="Выберите квалификацию"
+                        onChange = {SelectChange_qualification}
+                        allowClear
+                      >
+                        <Option value="Бакалавриат">Бакалавриат</Option>
+                        <Option value="Магистратура">Магистратура</Option>
+                      </Select>
+                    </div>
+                    <div>
+                      <Popover content={<li className='w-120 ml-4 text-wrap'>В поле "Квалификация" можно выбрать одно из значений: Бакалавриат или Магистратура</li>}>
+                        <InfoCircleOutlined style={{fontSize: '28px', color: 'white'}}/>
+                      </Popover>
+                    </div>
+                  </div>   
                 </Form.Item>
-                <Form.Item name="supervisor_" label="Научный руководитель">
-                  <Select
-                    showSearch
-                    mode="multiple"
-                    placeholder="Выберите научного руководителя"
-                    onChange={SelectChange_supervisor}
-                    options={getSupervisors}
-                    optionFilterProp='label'
-                    filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
-                    allowClear
-                  />
+                <Form.Item name="supervisor_">
+                   <div className='flex justify-around w-140'>
+                    <div className='w-120'>
+                      <Select
+                        showSearch
+                        mode="multiple"
+                        placeholder="Выберите научного руководителя"
+                        onChange={SelectChange_supervisor}
+                        options={getSupervisors}
+                        optionFilterProp='label'
+                        filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+                        allowClear
+                      />
+                    </div>
+                    <div>
+                      <Popover content={<li className='w-120 ml-4 text-wrap'>В поле "Научный руководитель" можно выбрать несколько научных руководителей</li>}>
+                        <InfoCircleOutlined style={{fontSize: '28px', color: 'white'}}/>
+                      </Popover>
+                    </div>
+                  </div>     
                 </Form.Item>
-                <Form.Item name="tags_" label="Тэги">
-                  <Input name="tags_" placeholder='Поисковые тэги ВКР' onChange = {handleChange} allowClear/>
+                <Form.Item name="tags_">
+                  <div className='flex justify-around w-140'>
+                    <div className='w-120'>
+                      <Select
+                        showSearch
+                        mode='tags'
+                        placeholder="Выберите или введите тэг"
+                        onChange={SelectChange_tags}
+                        options={getTags}
+                        optionFilterProp='label'
+                        filterSort = {(a, b) => ((a?.label ?? '').toLowerCase()).localeCompare((b?.label ?? '').toLowerCase())}
+                        allowClear
+                      />
+                    </div>
+                    <div className='self-center'>
+                      <Popover content={<ul id="note-list" className='list-inside w-210 '>
+                            <li className='my-2'>Тэги помогают с поиском ВКР, если отсутствуют ключевые слова (например, при вводе тэга "Грузоперевозки" программа выведет "Адаптивная модель грузоперевозок"); можно выбрать несколько тэгов</li>
+                            <li className='my-2'>ВАЖНО! Если тэг отсутствует в предложенном списке, то его можно ввести в поле "Тэги". В данном случае будут показаны работы с наиболее близкими по тематике тэгами</li>
+                          </ul>}>
+                        <InfoCircleOutlined style={{fontSize: '28px', color: 'white'}}/>
+                      </Popover>
+                    </div>
+                  </div>   
                 </Form.Item>
                 <Form.Item {...tailLayout}>
-                  <Space>
-                    <Button onClick = {() =>{
-                      getPasskeyInitial(url, byVisitorId)
-                      fetchData(dataGQW, url)
-                      console.log("here",dataGQW)
-                      setFilter(0)
-                    }} type="primary" htmlType="submit">
-                      Поиск
-                    </Button>
-                    <Button htmlType="button" onClick={onReset}>
-                      Сбросить
-                    </Button>
-                  </Space>
+                  <div className='flex justify-center'>
+                    <Space>
+                      <Button onClick = {() =>{
+                        getPasskeyInitial(url, visitor)
+                        fetchData(dataGQW, url)
+                        // console.log("here",dataGQW)
+                        setFilter(0)
+                      }} type="primary" htmlType="submit">
+                        Поиск
+                      </Button>
+                      <Button htmlType="button" onClick={onReset}>
+                        Сбросить
+                      </Button>
+                    </Space>
+                  </div>
                 </Form.Item>
               </Form>
             </div>
-            {util.noteGet()}
+            </div>
           </div>
           {CardList(gqwForm, filter, passkey, isLoading)}
       </div>
@@ -434,6 +538,8 @@ function App_main() {
 
   return (
     <>
+      {contextHolder_notification}
+      {contextHolder_modal}
       {main()}
     </>
   )
