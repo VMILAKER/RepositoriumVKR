@@ -74,7 +74,7 @@ function App_main() {
       
     })
   }
-  const url = "http://10.6.41.116:8001/repositorium"
+  const url = "http://url/repository"
 
   const layout = {
     labelCol: { span: 8 },
@@ -268,10 +268,6 @@ function App_main() {
     setFilter(event*1)
   };
 
-  const handleChangeFilter_percent = (event) => {
-    setFilter(event/100)
-  };
-  
   const inputPasskey = (event) => {
     visitor['password'] = event.target.value
   };
@@ -323,11 +319,11 @@ function App_main() {
     const check_key_card = (key_list, param, link) => { 
       if (Array.from(key_list).find(o => o.id == param)) {
         return (
-          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: </span><a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`full_pdf/${link}`)} target="_blank" >Полный текст</a>/ <a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(link)} target="_blank" >Аннотация</a></p>
+          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: </span><a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`full_pdf/${link}`)} target="_blank" >Полный текст</a>/ <a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`compressed/${link}`)} target="_blank" >Аннотация</a></p>
         )}
       else {
         return (
-          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: <a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(link)} target="_blank" >Аннотация</a></span></p>
+          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: <a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`compressed/${link}`)} target="_blank" >Аннотация</a></span></p>
           )
         }
     };
@@ -335,7 +331,7 @@ function App_main() {
     return( 
       <>
         <Card component='span' styles={{'title':{'textWrap': "wrap"}}} title={item?.theme}>
-          <div className='flex items-center'><span className='font-bold'>Руководитель: </span><Collapse className='w-130' size='small' items={[{label:item?.supervisor_gqw.name, children: <ul><li>Место работы: {item?.supervisor_gqw.department_gqw.department}</li><li>Учёная степень: {item?.supervisor_gqw.degree_gqw.degree}</li></ul>}]}/></div>
+          <div className='flex items-center'><span className='font-bold mr-2'>Руководитель: </span><Collapse className='w-130' size='small' items={[{label:item?.supervisor_gqw.name, children: <ul><li>Место работы: {item?.supervisor_gqw.department_gqw.department}</li><li>Учёная степень: {item?.supervisor_gqw.degree_gqw.degree}</li></ul>}]}/></div>
           <p className='my-2'><span className='font-bold'>Уровень образования: </span>{item?.type_of_qualification.qualification}</p>
           <p className='my-2 text-justify'><span className='font-bold'>Аннотация: </span>{item?.abstract}</p>
           {check_key_card(key_list, item?.id, item?.reference)}
@@ -396,7 +392,6 @@ function App_main() {
                 <p className='mb-2'>Количество результатов: {filter_number}</p>
                 <div className='w-100 self-center bg-slate-500 rounded-lg place-items-center'>            
                   <Collapse className='w-100' items={[{label: <span className='text-white'>Фильтр</span>, children: <div className='flex text-center justify-center w-90'><span className='mb-2 place-self-center'>Показать {<InputNumber min={0} max={params.length} onChange={handleChangeFilter_top}/>} {onChange_filter(filter_number)}</span></div>}]}/>
-                  {/* <span>Процент от всех записей, %: {<InputNumber min={1} max={100} onChange={handleChangeFilter_percent}/>} </span> */}
                 </div>
               </div>
               {paramsShow(params, filter_number, list_key)}
@@ -502,7 +497,7 @@ function App_main() {
                     </div>
                     <div className='self-center'>
                       <Popover content={<ul id="note-list" className='list-inside w-210 '>
-                            <li className='my-2'>Тэги помогают с поиском ВКР, если отсутствуют ключевые слова (например, при вводе тэга "Грузоперевозки" программа выведет "Адаптивная модель грузоперевозок"); можно выбрать несколько тэгов</li>
+                            <li className='my-2'>Тэги помогают с поиском ВКР, если отсутствуют ключевые слова; можно выбрать несколько тэгов</li>
                             <li className='my-2'>ВАЖНО! Если тэг отсутствует в предложенном списке, то его можно ввести в поле "Тэги". В данном случае будут показаны работы с наиболее близкими по тематике тэгами</li>
                           </ul>}>
                         <InfoCircleOutlined style={{fontSize: '28px', color: 'white'}}/>

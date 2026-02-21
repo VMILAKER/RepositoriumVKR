@@ -1,9 +1,8 @@
-# from pymongo import MongoClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-POSTGRESQL_URL = "postgresql://dynamo:kds041@postgres-repositorium/repositorium"
+POSTGRESQL_URL = "postgresql://login:password@postgres-repositorium/database"
 
 engine = create_engine(POSTGRESQL_URL)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -18,6 +17,7 @@ def get_db_sql():
     """
 
     db = SessionLocal()
+    db.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
     try:
         yield db
     finally:

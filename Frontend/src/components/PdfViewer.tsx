@@ -26,7 +26,7 @@ const PdfViewer = () => {
             }}>
                 <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js">
                     <Viewer 
-                        fileUrl={`http://10.6.41.116:81/${receivedValue}`}
+                        fileUrl={`http://url/${receivedValue}`}
                         renderPage={renderPage}
                     />
                 </Worker>

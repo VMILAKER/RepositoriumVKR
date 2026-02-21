@@ -35,10 +35,10 @@
   },
   "proxy": {
     "/.*(_get)": {
-      "target": "http://10.6.41.116:8001"
+      "target": "http://backend_url"
     },
     "/upload.*(_post)": {
-      "target": "http://10.6.41.116:8001"
+      "target": "http://backend_url"
     },
     "/pdf_viewer.*": {
       "target": [

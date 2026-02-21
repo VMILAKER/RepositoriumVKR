@@ -37,7 +37,7 @@ function UploadVKR() {
     const [form] = Form.useForm();
     const { Option } = Select;
 
-    const url = "http://10.6.41.116:8001/repositorium"
+    const url = "http://url/repository"
 
     const messageSystem = (type_message, params, time) => {
         messageApi.open({
@@ -129,7 +129,6 @@ function UploadVKR() {
                     messageSystem('loading', 'Добавление', 15)
                     await axios.post(`${url_}/create_file`, formData).then(r => {
                         let responce = r.data
-                        console.log(r.data)
                         if (responce === 'The file is uploaded') {
                             axios.post(`${url_}/post`, upload_dict)
                             messageSystem('success', `ВКР загружена!`, 4)
@@ -227,7 +226,6 @@ function UploadVKR() {
                         <Space>
                         <Button onClick = {() =>{
                             uploadData(dataUpload, url)
-                            console.log("transfer",dataUpload)
                         }
                             } type="primary" htmlType="submit">
                             Загрузить
