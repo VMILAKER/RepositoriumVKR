@@ -18,13 +18,19 @@ MiniLM is used to map work's tags to vectors for tasks of semantic search (The [
 ```
   or
 ```
- pip install fastapi
- pip install numpy
- pip install pydantic
- pip install scikit_learn
- pip install sentence_transformers
- pip install sqlalchemy
- pip install uvicorn
+pip install alembic
+pip install fastapi
+pip install numpy
+pip install pdfminer.six
+pip install pgvector
+pip install psycopg2_binary
+pip install pydantic
+pip install PyPdf2
+pip install reportlab
+pip install sentence_transformers
+pip install SQLAlchemy
+pip install uvicorn
+pip install python-multipart
 ```
 2. Next, there are some packages for Frontend:</br>
 * If you have already installed node and npm (check it with node -v and npm -v in terminal)
