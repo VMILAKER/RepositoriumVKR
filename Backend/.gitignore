@@ -1,0 +1,7 @@
+.env
+.ruff_cache
+app
+r.txt
+.venv
+__pycache__
+volume

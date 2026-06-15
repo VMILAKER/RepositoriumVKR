@@ -2,7 +2,7 @@
 
 services:
   app:
-   container_name: b-repositorium
+   container_name: repositorium
    build: 
      context: .
      dockerfile: Dockerfile
@@ -10,6 +10,8 @@ services:
      - db
    volumes:
     - ./app:/Backend/app
+   environment:
+      - DATABASE_URL="postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres-repositorium/${DB_NAME}"
    ports:
     - '8001:8000'
    networks:
@@ -18,35 +20,82 @@ services:
 
   db:
     container_name: postgres-repositorium
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: login
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: database
+      POSTGRES_USER: "${DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+      POSTGRES_DB: "${DB_NAME}"
     ports:
-     - '5433:5432'
+     - "${DB_PORT}:5432"
     volumes:
       - ./volume:/var/lib/postgresql/data
     networks:
      - rep-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U login -d database"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: always
+  
   nginx-client:
     image: nginx:latest
     ports:
      - '81:80'
     volumes:
     - "./app:/usr/share/nginx/html/"
-    - "./app/full_pdf:/usr/share/nginx/html/full_pdf"
     - "./app/compressed:/usr/share/nginx/html/compressed"
     - "./nginx.conf:/etc/nginx/nginx.conf"
     networks:
      - rep-network
     restart: always
+  ollama:
+    image: ollama/ollama:latest
+    platform: linux/amd64
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11435:11434"
+    deploy:
+      resources:
+        limits:
+          cpus: '10'
+    cpuset: "0-9" 
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - rep-network
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3000:8080"
+    volumes:
+      - open-webui_data:/app/backend/data
+      # - open-webui_data:/backend/data
+    environment:
+      # - OLLAMA_BASE_URL=http://rep-network:11435
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # - CORS_ALLOW_ORIGIN=http://ollama
+      # - CORS_ALLOW_ORIGIN=http://rep-network
+      - CORS_ALLOW_ORIGIN=http://localhost:3000
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    networks:
+      - rep-network
+
+volumes:
+  ollama_data:
+  open-webui_data:
 
 networks:
   rep-network:

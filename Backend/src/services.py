@@ -1,36 +1,42 @@
 import datetime
 import os
-import random
 import re
 import shutil
+import tracemalloc
 import uuid
 from datetime import timedelta
 
 import requests
-from fastapi import HTTPException
-from pdfminer.high_level import extract_text
+from fastapi import HTTPException, status
 from PyPDF2 import PdfReader, PdfWriter
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import (TA_CENTER, TA_JUSTIFY, TA_LEFT,
-                                  ParagraphStyle, getSampleStyleSheet)
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate
 from sentence_transformers import SentenceTransformer
-from sqlalchemy import and_
+from sqlalchemy import and_, func, select, update
+from sqlalchemy.orm import joinedload
 
+import config
 import src.dto as DTO
 import src.models as Models
-from utilities import build_filter
+import utilities as util
 
-styles = getSampleStyleSheet()
-styles['Normal'].fontName = 'TNR'
-pdfmetrics.registerFont(TTFont('TNR', 'TNR.ttf', 'UTF-8'))
-
-model_name = 'nanalysenko/DeepPavlov_for_Panacea'
+model_name = config.get_sentence_transformer_model_name()
 model = SentenceTransformer(model_name)
+tracemalloc.start()
 
-def get_gqw_data_sql(theme_: str, supervisor_: str, qualification_: str, tags_: str, db):
+compressed_pdf_folder_path, abstract_folder_path = config.get_pdf_folders()
+
+async def get_preloaded_data(db):
+    try:
+        gqw_request = (await db.execute(select(Models.GQW_model)))
+        if gqw_request.scalars().unique().all():
+            return [[{'value': item, 'label': item} for item in (await db.execute(select(Models.GQW_model.theme))).scalars().unique().all() if item], [item for item in (await db.execute(select(Models.GQW_model.reference))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.Supervisor_department.department))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.GQW_supervisor.name))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.Supervisor_degree.degree))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.GQW_tag.tag_name))).scalars().unique().all() if item if item not in ['Нет доступных тэгов', 'There is no text', 'null']]]
+        else:
+            return 'No data'
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
+    
+
+async def get_gqw(theme_: str, supervisor_: str, qualification_: str, tags_: str, db):
     """Extracting data from POSTGRESQL by certain parametrs.
     P.S. GQW- Graduate Qualification work
 
@@ -45,519 +51,411 @@ def get_gqw_data_sql(theme_: str, supervisor_: str, qualification_: str, tags_: 
         List[dict]: the dictationary or list of dictationaries with the requsted data
     """
     try:
-        filter_dict = {
-            'id': [],
-        }
-
-        if not filter_dict.values():
-            return 'No findings'
-        else:
-            
-            if qualification_:
+        filter_dict = {}
+        if qualification_:
                 filter_dict['type_of_qualification'] = qualification_
-            if theme_:
-                filter_dict['theme'] = [str(i.strip())
-                                        for i in theme_.split(',') if i]
-            if supervisor_:
-                filter_dict['supervisor'] = [str(i.strip())
-                                             for i in supervisor_.split(',') if i]
-            if tags_:
+        if theme_:
+            filter_dict['theme'] = [str(i.strip())
+                                    for i in theme_.split(',') if i]
+        if supervisor_:
+            filter_dict['supervisor'] = [str(i.strip())
+                                        for i in supervisor_.split(',') if i]
+        if tags_:
                 tags_list = [i.strip().lower() for i in tags_.split(',')] 
+                filtered_ids = set()
                 for tag in tags_list:
                     embedding = model.encode(tag.lower())
-                    filtered_ids = list(set([row.id for row in db.query(Models.GQW_model.id).join(Models.GQW_model.tag_gqw).join(Models.GQW_tag.vector_id).filter(Models.GQW_vector.vector.cosine_distance(embedding) < 0.41).all()]))
-                    filter_dict['id'].extend(filtered_ids)
+                    req_ids= await db.execute(select(Models.Middle.vkr_id).join(Models.GQW_tag, Models.GQW_tag.id == Models.Middle.tags_id).join(Models.GQW_vector, Models.GQW_tag.id == Models.GQW_vector.tag_id).where(Models.GQW_vector.vector.cosine_distance(embedding) < 0.41))
+                    filtered_ids.update(req_ids.scalars().all())
+                filter_dict['id'] = list(filtered_ids)
                 if not filter_dict['id']:
                     return "No findings by tag's query"
-            
-            if db.query(Models.GQW_model).join(Models.GQW_model.supervisor_gqw).join(Models.GQW_model.tag_gqw).join(Models.GQW_model.type_of_qualification).filter(and_(*build_filter(db, filter_dict))).all():
-                return db.query(Models.GQW_model).join(Models.GQW_model.supervisor_gqw).join(Models.GQW_model.tag_gqw).join(Models.GQW_model.type_of_qualification).filter(and_(*build_filter(db, filter_dict))).order_by(Models.GQW_model.type_of_qualification).all()
-            else:
-                return 'Nothing to say'
+        req = (await db.execute(select(Models.GQW_model).join(Models.GQW_supervisor, Models.GQW_model.supervisor_id == Models.GQW_supervisor.id).join(Models.Supervisor_department, Models.GQW_supervisor.department_id == Models.Supervisor_department.id).options(joinedload(Models.GQW_model.type_of_qualification), joinedload(Models.GQW_model.supervisor_gqw), joinedload(Models.GQW_model.supervisor_gqw).joinedload(Models.GQW_supervisor.department_gqw), joinedload(Models.GQW_model.supervisor_gqw).joinedload(Models.GQW_supervisor.degree_gqw),joinedload(Models.GQW_model.tag_gqw)).where(and_(*util.build_filter(filter_dict))))).scalars().unique().all()
+        if len(list(req))>0:
+            return [{
+                'id':i.id,
+                'theme': i.theme,
+                'abstract': i.abstract,
+                'qualification': i.type_of_qualification.qualification,
+                'reference': i.reference,
+                'supervisor': i.supervisor_gqw.name,
+                'supervisor_department': i.supervisor_gqw.department_gqw.department,
+                'supervisor_degree': i.supervisor_gqw.degree_gqw.degree,
+                'tags': [tag.tag_name for tag in i.tag_gqw]
+            } for i in req]
+        else:
+            return 'No data'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
-
-def upload_gqw_data_sql(data: dict, db):
+async def upload_gqw(data, file, db):
     try:
-        if not db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).count():
-            s5 = Models.Supervisor_department(department=data.department)
-            db.add(s5)
-            db.commit()
-        if not db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).count():
-            s6 = Models.Supervisor_degree(degree=data.degree)
-            db.add(s6)
-            db.commit()
-        if not db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).count():
-            dep = db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).one()
-            deg = db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).one()
-
-            s4 = Models.GQW_supervisor(
-                name=data.supervisor, department_id=dep.id, degree_id=deg.id)
-            db.add(s4)
-            db.commit()
-        if db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).count():
-            n = db.query(Models.GQW_supervisor).filter(
-                Models.GQW_supervisor.name == data.supervisor).one()
-            if db.query(Models.GQW_model).filter(Models.GQW_model.reference == data.reference).count():
-                s1 = db.query(Models.GQW_model).filter(Models.GQW_model.reference == data.reference).update({'supervisor_id': n.id})
-            else:
-                s1 = Models.GQW_model(supervisor_id=n.id)
-                db.add(s1)
-            db.commit()
-        return 'The data is downloaded'
-    except Exception as e:
-        print(f'Something wrong: {e}')
-    finally:
-        db.close()
-
-
-def upload_file(file, db):
-    justify_style = ParagraphStyle(
-        name="JustifiedStyle", parent=styles["Normal"], alignment=TA_JUSTIFY, leading=24, spaceAfter=24, firstLineIndent=25, fontSize=14)
-    center_style = ParagraphStyle(
-        name="CenteredStyle", parent=styles["Normal"], alignment=TA_CENTER, spaceAfter=10, fontSize=16)
-    left_style = ParagraphStyle(
-        name="CenteredStyle", parent=styles["Normal"], alignment=TA_LEFT, fontSize=12)
-    try:
+        filename= f'{util.generate_key()}.pdf'
         if (file.filename).endswith('.pdf'):
-            if not db.query(Models.GQW_model).filter(Models.GQW_model.theme== file.filename).count():
-                filepath_full = r'/Backend/app/full_pdf'
-                filepath_compressed = r'/Backend/app/compressed'
+            filepath_abstract = abstract_folder_path
+            filepath_compressed = compressed_pdf_folder_path
+            contents = file.file
 
-                contents = file.file
-                inputpdf = PdfReader(contents)
-                output = PdfWriter()
-
-                len_pdf = len(inputpdf.pages)
-                if len_pdf > 92:
-                    len_pdf = 92
-                
-                for i in range(1, len_pdf):
-                    if i in range(1, 5):
-                        if not re.search(r'ЗАДАНИЕ\s+НА\s+', inputpdf.pages[i].extract_text(), flags=re.IGNORECASE):
-                            if re.search(r'аннотация', inputpdf.pages[i].extract_text(), flags=re.IGNORECASE):
-                                output.add_page(inputpdf.pages[i])
-                    if i in range(5, len_pdf-30):
-                        output.add_page(inputpdf.pages[i])
-                    if i in range(len_pdf-30, len_pdf):
-                        if re.search(r'Приложени', inputpdf.pages[i].extract_text(), flags=re.IGNORECASE):
-                            break
+            async with db.begin():
+                file_ = (await db.execute(select(Models.GQW_model.id).where(Models.GQW_model.reference== filename))).scalars().unique().one_or_none()
+                if not file_:
+                    if data.department and data.degree:
+                        department = await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))
+                        degree = await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))
+                        if not department.scalars().one_or_none():
+                            s5 = Models.Supervisor_department(department=data.department)
+                            db.add(s5)
+                            await db.flush()
+                        if not degree.scalars().one_or_none():
+                            s6 = Models.Supervisor_degree(degree=data.degree)
+                            db.add(s6)
+                            await db.flush()
+                    
+                    supervisor = await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))
+                    if not supervisor.scalars().one_or_none():
+                        dep = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
+                        deg = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
+                        if dep and deg:
+                            s4 = Models.GQW_supervisor(
+                                name=data.supervisor, department_id=dep.id, degree_id=deg.id)
+                            db.add(s4)
+                            await db.flush()
                         else:
-                            output.add_page(inputpdf.pages[i])
+                            return 'Input department and degree of supervisor'
 
-                with open(os.path.join(filepath_full, file.filename), 'wb') as f:
-                    output.write(f)
-                list_word = ['аннотация',
-                            'annotation', 'abstract']
-                
-                title = extract_text(contents, page_numbers=[0])
-                text_ex = re.split(r'\n\n', title, 4)
-                text_ex[4] = text_ex[4].replace('\n', '')
-                theme=''
-                if re.search(r'(.*?)Выпускная', text_ex[4]):
-                    theme = re.search(
-                        r'(.*?)Выпускная', text_ex[4]).group(1).strip().upper()
-                    if re.search(r'<|>|^«|»$', theme):
-                        theme = re.sub(r'<|>|^«|»$', '', theme)
-                    if 'НАЗВАНИЕ ТЕМЫ РАБОТЫ:' in theme:
-                        theme = theme.replace(
-                            'НАЗВАНИЕ ТЕМЫ РАБОТЫ:', '').replace('<', '').replace('>', '').strip().upper()
-                    if 'НАПРИМЕРЕ' in theme:
-                        theme = theme.replace('НАПРИМЕРЕ', 'НА ПРИМЕРЕ').strip().upper()
-                    if re.search(r'УДК(.*?)\)', theme):
-                        res = str(re.search(r'УДК(.*?)\)', theme).group(0))
-                        theme = theme.split(res)[-1]
-                    if file.filename == 'Kokov.pdf':
-                        theme = theme.replace('КОКОВ АЛЕКСАНДР АНДРЕЕВИЧ', '')
 
-                qualification = ''
-                if re.search(r'подготовки\s+(.*?)\s+Международные', title):
-                    if re.search(r'подготовки\s+(.*?)\s+Международные', title).group(1) == '41.03.05':
-                        qualification = 'Бакалавриат'
-                    elif re.search(r'подготовки\s+(.*?)\s+Международные', title).group(1) == '41.04.05':
-                        qualification = 'Магистратура'
-                text_merge = list(set([extract_text(contents, page_numbers=[i]) for i in range(1, 8) for w in list_word if not 'оглавление' in extract_text(contents, page_numbers=[i]).lower() if not 'содержание' in extract_text(contents, page_numbers=[i]).lower() if
-                                        w in extract_text(contents, page_numbers=[i]).lower()]))
+                    theme, text_rus, text_en, qualification = util.generate_gqw_card(contents)
+                    
+                    qualification_req= (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == qualification))).scalars().unique().one_or_none()
+                    if not qualification_req:
+                        s7 = Models.GQW_qualification(qualification=qualification)
+                        db.add(s7)
+                        await db.flush()
+                    
+                    responce = ['gol', 'penalty']
+                    if text_rus[1] != 'No data':
+                        messages = config._create_payload(text_rus[1])
+                        tags_req = requests.post(config.get_ollama_api_url(),json=messages)
+                        print(tags_req.status_code)
+                        if tags_req.status_code == 200:
+                            print('gol')
+                    qualification_request = (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == qualification))).scalars().unique().one_or_none()
+                    supervisor_request = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().unique().one_or_none()
+                   
+                    theme_ = (await db.execute(select(Models.GQW_model).where(Models.GQW_model.theme== theme))).scalars().unique().one_or_none()
 
-                text = (' '.join(text_merge)).replace(
-                    '\n', ' ').replace('_', '').replace('\x0c', '')
-                text = [re.sub(r'\d+$|(- )', '', i).strip() for i in re.split(
-                    r'(Аннотация{1}|Abstract{1}|abstarct|Annotation|Оглавление|Содержание)', text, flags=re.IGNORECASE) if i]
-
-                text = [i for i in text if i]
-
-                text_rus = ['No data', 'No data']
-                text_en = ['No data', 'No data']
-                for j in range(len(text)):
-                    if not re.search(r'.{1,}\s+\d+', text[j]):
-                        if text[j].lower() in ['abstract', 'annotation', 'abstarct']:         
-                            text_en[0] = text[j]
-                            text_en[1] = text[j+1]
-                        if text[j].lower() in ['аннотация']:
-                            text_rus[0] = text[j]
-                            text_rus[1] = text[j+1]
-                            
-                
-                if text_rus:
-                    if re.search(r'\d+$', text_rus[1]):
-                        text_rus[1] = (re.sub(r'\d+$', '', text_rus[1])).strip()
-                if text_en:
-                    if re.search(r'\d+$', text_en[1]):
-                        text_en[1] = (re.sub(r'\d+$', '', text_en[1])).strip()
-                if not db.query(Models.GQW_qualification).filter(Models.GQW_qualification.qualification == qualification).count():
-                    s7 = Models.GQW_qualification(qualification=qualification)
-                    db.add(s7)
-                    db.commit()
-                
-                tags_req = ''
-                responce = ''
-                if text_rus[1] != 'No data':
-                    tags_req = requests.get('http://url/keyword_ext', params={'text':text_rus[1]})
-                    if tags_req.status_code == 200:
-                        responce = (tags_req.text).replace("\"", '').split(',')
-                elif text_rus[1] == 'No data' and text_en[1] != 'No data':
-                    text_rus[1] = text_en[1]
-                    tags_req = requests.get('http://url/keyword_ext', params={'text':text_en[1]})
-                    if tags_req.status_code == 200:
-                        responce = (tags_req.text).replace("\"", '').split(',')
-                qualification_request = db.query(Models.GQW_qualification).filter(Models.GQW_qualification.qualification == qualification).one()
-                if db.query(Models.GQW_model).filter(Models.GQW_model.reference== file.filename).count(): 
-                    if not db.query(Models.GQW_model).filter(Models.GQW_model.theme== theme).count():
-                        s1 = db.query(Models.GQW_model).filter(Models.GQW_model.reference== str(file.filename)).update({'qualification_id': qualification_request.id, 'theme': theme, 'abstract': f'{text[1]}'})
-                        db.commit()               
-                    else:
-                        return theme
-                else:
-                    if not db.query(Models.GQW_model).filter(Models.GQW_model.theme== theme).count():
-                        s1 = Models.GQW_model(qualification_id=qualification_request.id, theme=theme, reference=file.filename, abstract=f'{text_rus[1]}')
+                    if not theme_:
+                        s1 = Models.GQW_model(qualification_id=qualification_request.id, theme=theme, reference=filename, abstract=f'{text_rus[1]}', supervisor_id=supervisor_request.id)
                         db.add(s1)
-                        db.commit()
+                        await db.flush()
                     else:
-                        return theme
-                updated_gqw_id= db.query(Models.GQW_model.id).filter(Models.GQW_model.reference == file.filename).one()
+                        return 'GQW already exists'
+                    updated_gqw_id= (await db.execute(select(Models.GQW_model.id).where(Models.GQW_model.reference == filename))).scalars().one_or_none()
 
-                if not responce == 'There is no text':
-                    for tag in responce:
-                        tag = tag.strip()
-                        tag_ = f'{tag[0].upper()}{tag[1:]}'.strip()
-                        if not db.query(Models.GQW_tag).filter(Models.GQW_tag.tag_name == tag_).count():
-                            s2 = Models.GQW_tag(tag_name=str(tag_).strip())
-                            db.add(s2)
-                            db.commit()
-                            sm = Models.Middle(vkr_id=updated_gqw_id.id, tags_id=s2.id)
-                            db.add(sm)
-                            s3 = Models.GQW_vector(vector=
-                                model.encode(tag_.lower()), tag_id=s2.id)
-                            db.add(s3)
-                            db.commit()
+                    if not responce == 'There is no text':
+                        for tag in responce:
+                            tag = tag.strip()
+                            tag_ = f'{tag[0].upper()}{tag[1:]}'.strip()
+                            tag_req = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag_))).scalars().one_or_none()
+                            if not tag_req:
+                                s2 = Models.GQW_tag(tag_name=str(tag_).strip())
+                                db.add(s2)
+                                await db.flush()
+                                sm = Models.Middle(vkr_id=updated_gqw_id, tags_id=s2.id)
+                                db.add(sm)
+                                s3 = Models.GQW_vector(vector=
+                                    model.encode(tag_.lower()), tag_id=s2.id)
+                                db.add(s3)
+                                await db.flush()
+                            else:
+                                tags = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag_))).scalars().one_or_none()
+                                sm = Models.Middle(vkr_id=updated_gqw_id, tags_id=tags.id)
+                                db.add(sm)
+                                await db.flush()
+                    else:
+                        req_no_tag = (await db.execute(select(Models.GQW_tag.id).where(Models.GQW_tag.tag_name == 'Нет доступных тэгов'))).scalars().one_or_none()
+                        if not req_no_tag:
+                            s_no_tag = Models.GQW_tag(tag_name='Нет доступных тэгов')
+                            db.add(s_no_tag)
+                            await db.flush()
+                            sm_no_tag = Models.Middle(vkr_id=updated_gqw_id, tags_id=s_no_tag.id)
+                            await db.flush()
                         else:
-                            tags = db.query(Models.GQW_tag).filter(Models.GQW_tag.tag_name == tag_).one()
-                            sm = Models.Middle(vkr_id=updated_gqw_id.id, tags_id=tags.id)
-                            db.add(sm)
-                            db.commit()
+                            sm_no_tag = Models.Middle(vkr_id=updated_gqw_id, tags_id=req_no_tag)
+                            db.add(sm_no_tag)
+                            await db.flush()
+                    
+                    
+                    util.create_compressed_gqw(contents, filepath_compressed, filename)
+                    util.create_abstract_file(text_rus, text_en, filepath_abstract, filename)
+                    return 'The file is uploaded'
                 else:
-                    s_no_tag = Models.GQW_tag(tag_name='Нет доступных тэгов')
-                    db.add(s_no_tag)
-                    sm_no_tag = Models.Middle(vkr_id=updated_gqw_id.id, tags_id=s_no_tag.id)
-                    db.add(sm_no_tag)
-                    db.commit()
-
-                doc = SimpleDocTemplate(os.path.join(filepath_compressed, file.filename), pagesize=A4)
-                p1 = Paragraph(str(text_rus[0]).replace(
-                    "\n", "<br />"), center_style)
-
-                p2 = Paragraph(str(text_rus[1]).replace(
-                    "\n", "<br />"), justify_style)
-                p3 = Paragraph(str(text_en[0]).replace(
-                    "\n", "<br />"), center_style)
-                p4 = Paragraph(str(text_en[1]).replace(
-                    "\n", "<br />"), justify_style)
-                doc.build([p1, p2, p3, p4],)
-                return 'The file is uploaded'
-            else:
-                return theme
+                    return 'Filename already exists'
         else:
             return 'Please, attach .pdf file'
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Something went wrong: {e}')
     finally:
         file.file.close()
-        db.close()
 
 
-def post_passkey(passkey: DTO.PassKey, db):
+
+async def update_gqw(data, db):
     try:
-        charset='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNOPQRSTUVWXYZ0123456789'
-        password_new = ''
-
-        for i in range(8):
-            password_new += charset[random.randint(0, len(charset)-1)]
-        gqw_id_converted = uuid.UUID(passkey.gqw_id)
-        if not db.query(Models.Visitor).filter(Models.Visitor.visitor_id == passkey.visitor_id).count():
-            s1 = Models.Visitor(visitor_id = passkey.visitor_id)
-            db.add(s1)
-            db.commit()
-        if not db.query(Models.PassKeys).filter(and_(Models.PassKeys.token_encoded == password_new, Models.PassKeys.gqw_id == gqw_id_converted, Models.PassKeys.visitor_f == passkey.visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())).count():
-            s2 = Models.PassKeys(token_encoded = password_new, date_of_get=datetime.datetime.now(), date_expired=(datetime.datetime.now() + timedelta(days=1)), visitor_f= passkey.visitor_id, gqw_id= gqw_id_converted)
-            db.add(s2)
-            db.commit()
-            return password_new
-        else:
-            return 'Password is already created and valid'
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Something went wrong: {e}')
-    finally:
-        db.close()
-
-
-def get_passkey(password: str, gqw_id: str, visitor_id, db):
-    try:
-        if visitor_id and db.query(Models.PassKeys).join(Models.Visitor).filter(and_(Models.PassKeys.visitor_f == visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())).count():
-            return [{'id': f'{item.gqw_id}'} for item in db.query(Models.PassKeys.gqw_id).join(Models.Visitor).filter(and_(Models.PassKeys.visitor_f == visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())).distinct()]
-        if gqw_id:
-            gqw_id_converted = uuid.UUID(gqw_id)
-            if db.query(Models.PassKeys).join(Models.Visitor).filter(and_(Models.PassKeys.gqw_id == gqw_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())).count():
-                return [{'id': f'{item.gqw_id}'} for item in db.query(Models.PassKeys.gqw_id).join(Models.Visitor).filter(and_(Models.PassKeys.gqw_id == gqw_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())).distinct()]
-            else:
-                return 'Unvalid key'
-        else:
-            return 'No data'
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Something went wrong: {e}')
-    finally:
-        db.close()
-
-
-def get_preloaded_data(db):
-    try:
-        if db.query(Models.GQW_model).join(Models.GQW_model.supervisor_gqw).join(Models.GQW_model.tag_gqw).join(Models.GQW_model.type_of_qualification).all():
-            return [[{'value': item.theme, 'label': item.theme} for item in db.query(Models.GQW_model.theme).distinct() if item.theme], [item.reference for item in db.query(Models.GQW_model.reference).distinct() if item.reference], [{'value':item.department, 'label':item.department} for item in db.query(Models.Supervisor_department.department).distinct() if item.department], [{'value':item.name, 'label':item.name} for item in db.query(Models.GQW_supervisor.name).distinct() if item.name], [{'value':item.degree, 'label':item.degree} for item in db.query(Models.Supervisor_degree.degree).distinct() if item.degree], [{'value':item.tag_name, 'label':item.tag_name} for item in db.query(Models.GQW_tag.tag_name).distinct() if item.tag_name if not item.tag_name in ['Нет доступных тэгов', 'There is no text', 'null']]]
-        else:
-            return 'No data'
-    except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
-
-
-def update_gqw(data, db):
-    try:
-        d={}
-        if db.query(Models.GQW_model).join(Models.GQW_model.supervisor_gqw).join(Models.GQW_model.tag_gqw).join(Models.GQW_model.type_of_qualification).filter(Models.GQW_model.reference == data.reference).count():
+        update_filter_dict={}
+        if (await db.execute(select(Models.GQW_model).options(joinedload(Models.GQW_model.type_of_qualification), joinedload(Models.GQW_model.supervisor_gqw), joinedload(Models.GQW_model.supervisor_gqw).joinedload(Models.GQW_supervisor.department_gqw), joinedload(Models.GQW_model.supervisor_gqw).joinedload(Models.GQW_supervisor.degree_gqw),joinedload(Models.GQW_model.tag_gqw)).where(Models.GQW_model.reference == data.reference))).scalars().unique().one_or_none():
             if data.supervisor:
-                if db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).count():
-                    supervisor_new = db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).one()
-                    d['supervisor_id'] = supervisor_new.id
+                if (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none():
+                    supervisor_new = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none()
+                    update_filter_dict['supervisor_id'] = supervisor_new.id
                 else:
                     return f'supervisor - {data.supervisor} - is not searched'
             if data.qualification:
-                if db.query(Models.GQW_qualification).filter(Models.GQW_qualification.qualification == data.qualification).count():
-                    qualification_request = db.query(Models.GQW_qualification).filter(Models.GQW_qualification.qualification == data.qualification).one()
-                    d['qualification_id'] = qualification_request.id
+                if (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == data.qualification))).scalars().one_or_none():
+                    qualification_request = (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == data.qualification))).scalars().one_or_none()
+                    update_filter_dict['qualification_id'] = qualification_request.id
                 else:
-                    return f'qualification - {data.qualification} -  is not searched'
+                    return f'qualification - {data.qualification} -  is not found'
             if data.theme:
-                d['theme'] = data.theme
+                update_filter_dict['theme'] = data.theme
             if data.abstract:
-                d['abstract'] = data.abstract
-            if d:
-                s1 = db.query(Models.GQW_model).filter(Models.GQW_model.reference== data.reference).update(d)
-                db.commit()  
-            updated_gqw= db.query(Models.GQW_model).filter(Models.GQW_model.reference == data.reference).one()
+                update_filter_dict['abstract'] = data.abstract
+            if update_filter_dict:
+                await db.execute(update(Models.GQW_model).where(Models.GQW_model.reference== data.reference).values(update_filter_dict))
+                await db.commit()  
+            updated_gqw= (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().one_or_none()
             if data.tags:
-                s_tag_delete= db.query(Models.Middle).filter(Models.Middle.vkr_id == updated_gqw.id).all()
+                s_tag_delete= (await db.execute(select(Models.Middle).where(Models.Middle.vkr_id == updated_gqw.id))).scalars().all()
                 if s_tag_delete:
                     for i in s_tag_delete:
-                        db.delete(i)
-                        db.commit()
+                        await db.delete(i)
+                        await db.commit()
                 data_tags = str(data.tags)
                 for tag in data_tags.split(','):
                     tag = tag.strip()
-                    if not db.query(Models.GQW_tag).filter(Models.GQW_tag.tag_name == tag).count():
+                    if not (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag))).scalars().one_or_none():
                         s2 = Models.GQW_tag(tag_name=str(tag).strip())
                         db.add(s2)
-                        db.commit()
+                        await db.flush()
                         sm = Models.Middle(vkr_id=updated_gqw.id, tags_id=s2.id)
                         db.add(sm)
                         s3 = Models.GQW_vector(vector=
                             model.encode(tag.lower()), tag_id=s2.id)
                         db.add(s3)
-                        db.commit()
+                        await db.flush()
                     else:
-                        tags = db.query(Models.GQW_tag).filter(Models.GQW_tag.tag_name == tag).one()
+                        tags = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag))).scalars().one_or_none()
                         sm = Models.Middle(vkr_id=updated_gqw.id, tags_id=tags.id)
                         db.add(sm)
-                        db.commit()
+                        await db.flush()
             return f'{data.reference} is updated'
         else:
-            return f'Empty fields'
+            return 'Empty fields'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
-def update_supervisor(data, db):
+
+
+async def update_supervisor(data, db):
     try:
-        if not db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).count():
-            s5 = Models.Supervisor_department(department=data.department)
-            db.add(s5)
-            db.commit()
-        if not db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).count():
-            s6 = Models.Supervisor_degree(degree=data.degree)
-            db.add(s6)
-            db.commit()
-        if not db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).count():
-            dep = db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).one()
-            deg = db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).one()
+        async with db.begin():
+            if not (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none():
+                s5 = Models.Supervisor_department(department=data.department)
+                db.add(s5)
+                await db.flush()
+            if not (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none():
+                s6 = Models.Supervisor_degree(degree=data.degree)
+                db.add(s6)
+                await db.flush()
+            if not (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none():
+                dep = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
+                deg = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
 
-            s4 = Models.GQW_supervisor(
-                name=data.supervisor, department_id=dep.id, degree_id=deg.id)
-            db.add(s4)
-            db.commit()
-            return f'{data.supervisor} is updated'
+                s4 = Models.GQW_supervisor(
+                    name=data.supervisor, department_id=dep.id, degree_id=deg.id)
+                db.add(s4)
+                await db.flush()
+                return f'{data.supervisor} is uploaded'
+            else:
+                supervisor = (await db.execute(select(Models.GQW_supervisor).options(joinedload(Models.GQW_supervisor.degree_gqw), joinedload(Models.GQW_supervisor.department_gqw)).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none()
+                if supervisor.degree_gqw.degree != data.degree:
+                    degree_new = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
+                    if supervisor:
+                        supervisor.degree_id = degree_new.id
+                        await db.flush()
+                if supervisor.department_gqw.department != data.department:
+                    department_new = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
+                    if supervisor:
+                        supervisor.department_id = department_new.id
+                        await db.flush()
+                return f'{supervisor.name} is updated'
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
+
+
+async def post_passkey(passkey: DTO.PassKey, db):
+    try:
+        password = util.generate_key()
+
+        gqw_id_converted = uuid.UUID(passkey.gqw_id)
+        async with db.begin():
+            visitor_request = await db.execute(select(Models.Visitor).where(Models.Visitor.visitor_id == passkey.visitor_id))
+            if not visitor_request.scalars().one_or_none():
+                s1 = Models.Visitor(visitor_id = passkey.visitor_id)
+                db.add(s1)
+                await db.flush()
+
+            passkey_request = await db.execute(select(Models.PassKeys).where(and_(Models.PassKeys.token_encoded == password, Models.PassKeys.gqw_id == gqw_id_converted, Models.PassKeys.visitor_f == passkey.visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))
+            if not passkey_request.scalars().one_or_none():
+                s2 = Models.PassKeys(token_encoded = password, date_of_get=datetime.datetime.now(), date_expired=(datetime.datetime.now() + timedelta(days=1)), visitor_f= passkey.visitor_id, gqw_id= gqw_id_converted)
+                db.add(s2)
+                await db.flush()
+                return password
+            else:
+                return 'Password is already created and valid'
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Something went wrong: {e}')
+
+
+async def get_passkey(password: str, gqw_id: str, visitor_id, db):
+    try:
+        passkey_request = await db.execute(select(Models.PassKeys).join(Models.Visitor).where(and_(Models.PassKeys.visitor_f == visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))
+        if visitor_id and passkey_request.scalars().unique().all():
+            return [{'id': f'{item}'} for item in (await db.execute(select(Models.PassKeys.gqw_id).join(Models.Visitor).where(and_(Models.PassKeys.visitor_f == visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))).scalars().unique().all()]
+        if gqw_id:
+            gqw_id_converted = uuid.UUID(gqw_id)
+            passkey_request_with_qqw_id = await db.execute(select(Models.PassKeys).join(Models.Visitor).where(and_(Models.PassKeys.gqw_id == gqw_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())))
+            if passkey_request_with_qqw_id.scalars().one_or_none():  
+                return [{'id': f'{item}'} for item in (await db.execute(select(Models.PassKeys.gqw_id).join(Models.Visitor).where(and_(Models.PassKeys.gqw_id == gqw_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())))).scalars().unique().all()]
+            else:
+                return 'Unvalid key'
         else:
-            n = db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).one()
-            if n.degree_gqw.degree != data.degree:
-                degree_new = db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).one()
-                s0 = db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).update({'degree_id': degree_new.id})
-                db.commit()
-            if n.department_gqw.department != data.department:
-                department_new = db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).one()
-                s8 = db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).update({'department_id': department_new.id})
-                db.commit()
-            return f'{n.name} is updated'
+            return 'No data'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Something went wrong: {e}')
 
 
-def delete_gqw(data, db):
+async def delete_gqw(data, db):
     try:
-        if f'{data.reference}' in os.listdir('./app/compressed'):
-            os.remove(f'./app/compressed/{data.reference}')
-        if f'{data.reference}'in os.listdir('./app/full_pdf'):
-            os.remove(f'./app/full_pdf/{data.reference}')
+        if f'{data.reference}' in os.listdir(compressed_pdf_folder_path):
+            os.remove(f'{compressed_pdf_folder_path}/{data.reference}')
+        if f'{data.reference}'in os.listdir(abstract_folder_path):
+            os.remove(f'{abstract_folder_path}/{data.reference}')
 
-        if db.query(Models.GQW_model).join(Models.GQW_model.supervisor_gqw).join(Models.GQW_model.tag_gqw).join(Models.GQW_model.type_of_qualification).filter(Models.GQW_model.reference == data.reference).count():
-            record = db.query(Models.GQW_model).join(Models.GQW_model.supervisor_gqw).join(Models.GQW_model.tag_gqw).join(Models.GQW_model.type_of_qualification).filter(Models.GQW_model.reference == data.reference).one()
-            db.delete(record)
-            db.commit()
+        if (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().first():
+            record = (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().first()
+            await db.delete(record)
+            await db.commit()
             return f'{data.reference} is deleted'
         else:
             return f'{data.reference} is not present'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
+
     
 
-def delete_tag(data, db):
+async def delete_tag(data, db):
     try:
-        if db.query(Models.GQW_tag).join(Models.GQW_vector).filter(Models.GQW_tag.tag_name == data.tag).count():
-            record = db.query(Models.GQW_tag).join(Models.GQW_vector).filter(Models.GQW_tag.tag_name == data.tag).one()
-            db.delete(record)
-            db.commit()
-            return f'{data.tag} is deleted'
+        if (await db.scalar(select(func.count(Models.GQW_tag.id)))) > 2:
+            if (await db.execute(select(Models.GQW_tag).join(Models.GQW_vector).where(Models.GQW_tag.tag_name == data.tag))).scalars().one_or_none():
+                record = (await db.execute(select(Models.GQW_tag).join(Models.GQW_vector).where(Models.GQW_tag.tag_name == data.tag))).scalars().one()
+                await db.delete(record)
+                await db.commit()
+                return f'{data.tag} is deleted'
+            else:
+                return f'{data.tag} is not present'
         else:
-            return f'{data.tag} is not present'
+            return 'Cannot delete because only 1 tag remains'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
 
-def delete_department(data, db):
+
+async def delete_department(data, db):
     try:
-        if db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).count():
-            record = db.query(Models.Supervisor_department).filter(Models.Supervisor_department.department == data.department).one()
-            db.delete(record)
-            db.commit()
-            return f'{data.department} is deleted'
+        if (await db.scalar(select(func.count(Models.Supervisor_department.id)))) > 2:
+            if (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none():
+                record = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one()
+                await db.delete(record)
+                await db.commit()
+                return f'{data.department} is deleted'
+            else:
+                return f'{data.department} is not present'
         else:
-            return f'{data.department} is not present'
+            return 'Cannot delete because only 1 department remains'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
 
-def delete_degree(data, db):
+
+async def delete_degree(data, db):
     try:
-        if db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).count():
-            record = db.query(Models.Supervisor_degree).filter(Models.Supervisor_degree.degree == data.degree).one()
-            db.delete(record)
-            db.commit()
-            return f'{data.degree} is deleted'
+        if (await db.scalar(select(func.count(Models.Supervisor_degree.id)))) > 2:
+            if (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none():
+                record = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one()
+                await db.delete(record)
+                await db.commit()
+                return f'{data.degree} is deleted'
+            else:
+                return f'{data.degree} is not present'
         else:
-            return f'{data.degree} is not present'
+            return 'Cannot delete because only 1 degree remains'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
 
-def change_compressed_file(file, db):
+async def delete_supervisor(data, db):
+    try:
+        if (await db.scalar(select(func.count(Models.GQW_supervisor.id)))) > 2:
+            if (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none():
+                record = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one()
+                await db.delete(record)
+                await db.commit()
+                return f'{data.supervisor} is deleted'
+            else:
+                return f'{data.supervisor} is not present'
+        else:
+            return 'Cannot delete because only 1 supervisor remains'
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
+
+
+async def replace_file(folder_name, file, db):
     try:
         if file.filename.endswith('.pdf'):
-            filepath_compressed = r'/Backend/app/compressed'
-            contents = file.file
-            with open(os.path.join(filepath_compressed, file.filename), 'wb') as buffer:
-                shutil.copyfileobj(contents, buffer)
-            return 'file is changed'
+            filename_from_db = (await db.execute(select(Models.GQW_model.reference).where(Models.GQW_model.reference == file.filename))).scalars().one_or_none()
+            if filename_from_db:
+                filepath = ''
+                if folder_name == compressed_pdf_folder_path:
+                    filepath = compressed_pdf_folder_path
+                else:
+                    filepath = abstract_folder_path
+                contents = file.file
+                with open(os.path.join(filepath, file.filename), 'wb') as buffer:
+                    shutil.copyfileobj(contents, buffer)
+                return 'file is changed'
+            else:
+                return 'No such file in database'
         else:
             return 'it is not .pdf file'
     except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
-
-def change_full_file(file, db):
-    try:
-        if file.filename.endswith('.pdf'):
-            filepath_full = r'/Backend/app/full_pdf'
-            contents = file.file
-            with open(os.path.join(filepath_full, file.filename), 'wb') as buffer:
-                shutil.copyfileobj(contents, buffer)
-            return 'file is changed'
-        else:
-            return 'it is not .pdf file'
-    except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
-
-def delete_supervisor(data, db):
-    try:
-        if db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).count():
-            record = db.query(Models.GQW_supervisor).filter(Models.GQW_supervisor.name == data.supervisor).one()
-            db.delete(record)
-            db.commit()
-            return f'{data.supervisor} is deleted'
-        else:
-            return f'{data.supervisor} is not present'
-    except Exception as e:
-        HTTPException(
-            status_code='502', detail=f'Sorry, the server is not available. The error is {e}')
-    finally:
-        db.close()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
 
-def change_full():
-    filepath = r'/Backend/app/full_pdf'
-    for file in os.listdir(filepath):
-        inputpdf = PdfReader(open(os.path.join(filepath, file), 'rb'))
+
+
+def recreate_full_pdf_version():
+    for file in os.listdir(compressed_pdf_folder_path):
+        inputpdf = PdfReader(open(os.path.join(compressed_pdf_folder_path, file), 'rb'))
         output = PdfWriter()
 
         len_pdf = len(inputpdf.pages)
@@ -575,6 +473,6 @@ def change_full():
                     break
                 else:
                     output.add_page(inputpdf.pages[i])
-        with open(os.path.join(filepath, file), 'wb') as pdf:
+        with open(os.path.join(compressed_pdf_folder_path, file), 'wb') as pdf:
             output.write(pdf)
             pdf.close()

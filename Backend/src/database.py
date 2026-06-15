@@ -1,15 +1,17 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 
-POSTGRESQL_URL = "postgresql://login:password@postgres-repositorium/database"
+from config import get_database_url
 
-engine = create_engine(POSTGRESQL_URL)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+db_url= get_database_url()
+
+engine = create_async_engine(db_url)
+SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, autoflush=False, expire_on_commit=False)
 Base = declarative_base()
 
 
-def get_db_sql():
+async def get_db_sql():
     """Launch POSTGRESql database session 
 
     Yields:
@@ -17,9 +19,19 @@ def get_db_sql():
     """
 
     db = SessionLocal()
-    db.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
     try:
         yield db
+    except Exception:
+        await db.rollback()
+        raise
     finally:
-        db.close()
+        await db.close()
+
+
+
+async def init_models():
+    async with engine.begin() as conn:
+        # await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+
 

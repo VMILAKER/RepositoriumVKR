@@ -7,7 +7,6 @@ class GraduateQuallificationWork(BaseModel):
     supervisor: str
     department: Optional[str] = None
     degree: Optional[str] = None
-    reference: str
 
 class PassKey(BaseModel):
     visitor_id: str
