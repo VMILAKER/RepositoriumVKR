@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import re
 import shutil
@@ -22,13 +23,20 @@ model_name = config.get_sentence_transformer_model_name()
 model = SentenceTransformer(model_name)
 tracemalloc.start()
 
+logger = logging.getLogger(__name__)
+logging.getLogger().setLevel(logging.INFO)
+
 compressed_pdf_folder_path, abstract_folder_path = config.get_pdf_folders()
 
 async def get_preloaded_data(db):
     try:
-        gqw_request = (await db.execute(select(Models.GQW_model)))
-        if gqw_request.scalars().unique().all():
-            return [[{'value': item, 'label': item} for item in (await db.execute(select(Models.GQW_model.theme))).scalars().unique().all() if item], [item for item in (await db.execute(select(Models.GQW_model.reference))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.Supervisor_department.department))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.GQW_supervisor.name))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.Supervisor_degree.degree))).scalars().unique().all() if item], [{'value':item, 'label':item} for item in (await db.execute(select(Models.GQW_tag.tag_name))).scalars().unique().all() if item if item not in ['Нет доступных тэгов', 'There is no text', 'null']]]
+        vkr_request = (await db.execute(select(Models.GQW_model)))
+        if vkr_request.scalars().unique().all():
+            return [[{'value': item, 'label': item} for item in (await db.execute(select(Models.GQW_model.theme))).scalars().unique().all() if item], [item for item in (await db.execute(select(Models.GQW_model.reference))).scalars().unique().all() if item], 
+                    [{'value':item, 'label':item} for item in (await db.execute(select(Models.Supervisor_department.department))).scalars().unique().all() if item], 
+                    [{'value':item, 'label':item} for item in (await db.execute(select(Models.GQW_supervisor.name))).scalars().unique().all() if item], 
+                    [{'value':item, 'label':item} for item in (await db.execute(select(Models.Supervisor_degree.degree))).scalars().unique().all() if item], 
+                    [{'value':item, 'label':item} for item in (await db.execute(select(Models.GQW_tag.tag_name))).scalars().unique().all() if item if item not in ['Нет доступных тэгов', 'There is no text', 'null']]]
         else:
             return 'No data'
     except Exception as e:
@@ -36,7 +44,7 @@ async def get_preloaded_data(db):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
     
 
-async def get_gqw(theme_: str, supervisor_: str, qualification_: str, tags_: str, db):
+async def get_vkr(theme_: str, supervisor_: str, qualification_: str, tags_: str, db):
     """Extracting data from POSTGRESQL by certain parametrs.
     P.S. GQW- Graduate Qualification work
 
@@ -52,8 +60,9 @@ async def get_gqw(theme_: str, supervisor_: str, qualification_: str, tags_: str
     """
     try:
         filter_dict = {}
+        logger.info(filter_dict)
         if qualification_:
-                filter_dict['type_of_qualification'] = qualification_
+            filter_dict['type_of_qualification'] = qualification_
         if theme_:
             filter_dict['theme'] = [str(i.strip())
                                     for i in theme_.split(',') if i]
@@ -65,8 +74,8 @@ async def get_gqw(theme_: str, supervisor_: str, qualification_: str, tags_: str
                 filtered_ids = set()
                 for tag in tags_list:
                     embedding = model.encode(tag.lower())
-                    req_ids= await db.execute(select(Models.Middle.vkr_id).join(Models.GQW_tag, Models.GQW_tag.id == Models.Middle.tags_id).join(Models.GQW_vector, Models.GQW_tag.id == Models.GQW_vector.tag_id).where(Models.GQW_vector.vector.cosine_distance(embedding) < 0.41))
-                    filtered_ids.update(req_ids.scalars().all())
+                    vkr_by_tag_request= await db.execute(select(Models.Middle.vkr_id).join(Models.GQW_tag, Models.GQW_tag.id == Models.Middle.tags_id).join(Models.GQW_vector, Models.GQW_tag.id == Models.GQW_vector.tag_id).where(Models.GQW_vector.vector.cosine_distance(embedding) < 0.41))
+                    filtered_ids.update(vkr_by_tag_request.scalars().all())
                 filter_dict['id'] = list(filtered_ids)
                 if not filter_dict['id']:
                     return "No findings by tag's query"
@@ -89,7 +98,7 @@ async def get_gqw(theme_: str, supervisor_: str, qualification_: str, tags_: str
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Sorry, the server is not available. The error is {e}')
 
-async def upload_gqw(data, file, db):
+async def upload_vkr(data, file, db):
     try:
         filename= f'{util.generate_key()}.pdf'
         if (file.filename).endswith('.pdf'):
@@ -98,97 +107,97 @@ async def upload_gqw(data, file, db):
             contents = file.file
 
             async with db.begin():
-                file_ = (await db.execute(select(Models.GQW_model.id).where(Models.GQW_model.reference== filename))).scalars().unique().one_or_none()
-                if not file_:
+                vkr_by_filename = (await db.execute(select(Models.GQW_model.id).where(Models.GQW_model.reference== filename))).scalars().unique().one_or_none()
+                if not vkr_by_filename:
                     if data.department and data.degree:
-                        department = await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))
-                        degree = await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))
-                        if not department.scalars().one_or_none():
-                            s5 = Models.Supervisor_department(department=data.department)
-                            db.add(s5)
+                        department_request = await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))
+                        degree_request = await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))
+                        if not department_request.scalars().one_or_none():
+                            add_department = Models.Supervisor_department(department=data.department)
+                            db.add(add_department)
                             await db.flush()
-                        if not degree.scalars().one_or_none():
-                            s6 = Models.Supervisor_degree(degree=data.degree)
-                            db.add(s6)
+                        if not degree_request.scalars().one_or_none():
+                            add_degree = Models.Supervisor_degree(degree=data.degree)
+                            db.add(add_degree)
                             await db.flush()
                     
-                    supervisor = await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))
-                    if not supervisor.scalars().one_or_none():
-                        dep = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
-                        deg = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
-                        if dep and deg:
-                            s4 = Models.GQW_supervisor(
-                                name=data.supervisor, department_id=dep.id, degree_id=deg.id)
-                            db.add(s4)
+                    supervisor_request = await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))
+                    if not supervisor_request.scalars().one_or_none():
+                        department = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
+                        degree = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
+                        if department and degree:
+                            add_supervisor = Models.GQW_supervisor(
+                                name=data.supervisor, department_id=department.id, degree_id=degree.id)
+                            db.add(add_supervisor)
                             await db.flush()
                         else:
                             return 'Input department and degree of supervisor'
 
 
-                    theme, text_rus, text_en, qualification = util.generate_gqw_card(contents)
+                    theme, text_rus, text_en, qualification = util.generate_vkr_card(contents)
                     
-                    qualification_req= (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == qualification))).scalars().unique().one_or_none()
-                    if not qualification_req:
-                        s7 = Models.GQW_qualification(qualification=qualification)
-                        db.add(s7)
+                    qualification_request= (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == qualification))).scalars().unique().one_or_none()
+                    if not qualification_request:
+                        add_qualification = Models.GQW_qualification(qualification=qualification)
+                        db.add(add_qualification)
                         await db.flush()
                     
-                    responce = ['gol', 'penalty']
+                    llm_response = 'No data'
                     if text_rus[1] != 'No data':
                         messages = config._create_payload(text_rus[1])
-                        tags_req = requests.post(config.get_ollama_api_url(),json=messages)
-                        print(tags_req.status_code)
-                        if tags_req.status_code == 200:
-                            print('gol')
+                        tags_extraction_request = requests.post(config.get_ollama_api_url(),json=messages)
+                        if tags_extraction_request.status_code == 200:
+                            responce_tags = tags_extraction_request.json()
+                            llm_response = [f'{i[0].upper()}{i[1:]}'.strip() for i in responce_tags['message']['content'].split(',') if i]
                     qualification_request = (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == qualification))).scalars().unique().one_or_none()
                     supervisor_request = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().unique().one_or_none()
                    
-                    theme_ = (await db.execute(select(Models.GQW_model).where(Models.GQW_model.theme== theme))).scalars().unique().one_or_none()
+                    vkr_by_theme = (await db.execute(select(Models.GQW_model).where(Models.GQW_model.theme== theme))).scalars().unique().one_or_none()
 
-                    if not theme_:
-                        s1 = Models.GQW_model(qualification_id=qualification_request.id, theme=theme, reference=filename, abstract=f'{text_rus[1]}', supervisor_id=supervisor_request.id)
-                        db.add(s1)
+                    if not vkr_by_theme:
+                        add_vkr = Models.GQW_model(qualification_id=qualification_request.id, theme=theme, reference=filename, abstract=f'{text_rus[1]}', supervisor_id=supervisor_request.id)
+                        db.add(add_vkr)
                         await db.flush()
                     else:
                         return 'GQW already exists'
-                    updated_gqw_id= (await db.execute(select(Models.GQW_model.id).where(Models.GQW_model.reference == filename))).scalars().one_or_none()
+                    updated_vkr_id= (await db.execute(select(Models.GQW_model.id).where(Models.GQW_model.reference == filename))).scalars().one_or_none()
 
-                    if not responce == 'There is no text':
-                        for tag in responce:
-                            tag = tag.strip()
-                            tag_ = f'{tag[0].upper()}{tag[1:]}'.strip()
-                            tag_req = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag_))).scalars().one_or_none()
-                            if not tag_req:
-                                s2 = Models.GQW_tag(tag_name=str(tag_).strip())
-                                db.add(s2)
+                    if not llm_response == 'No data':
+                        for tag in llm_response:
+                            tag = f'{tag[0].upper()}{tag[1:]}'
+                            tag_request = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag))).scalars().one_or_none()
+                            if not tag_request:
+                                add_tag = Models.GQW_tag(tag_name=str(tag).strip())
+                                db.add(add_tag)
                                 await db.flush()
-                                sm = Models.Middle(vkr_id=updated_gqw_id, tags_id=s2.id)
-                                db.add(sm)
-                                s3 = Models.GQW_vector(vector=
-                                    model.encode(tag_.lower()), tag_id=s2.id)
-                                db.add(s3)
+                                
+                                add_vkr_and_tag_relation = Models.Middle(vkr_id=updated_vkr_id, tags_id=add_tag.id)
+                                db.add(add_vkr_and_tag_relation)
+                                
+                                add_vector = Models.GQW_vector(vector=
+                                    model.encode(tag.lower()), tag_id=add_tag.id)
+                                db.add(add_vector)
                                 await db.flush()
                             else:
-                                tags = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag_))).scalars().one_or_none()
-                                sm = Models.Middle(vkr_id=updated_gqw_id, tags_id=tags.id)
-                                db.add(sm)
+                                tags = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag))).scalars().one_or_none()
+                                add_vkr_and_tag_relation = Models.Middle(vkr_id=updated_vkr_id, tags_id=tags.id)
+                                db.add(add_vkr_and_tag_relation)
                                 await db.flush()
                     else:
-                        req_no_tag = (await db.execute(select(Models.GQW_tag.id).where(Models.GQW_tag.tag_name == 'Нет доступных тэгов'))).scalars().one_or_none()
-                        if not req_no_tag:
-                            s_no_tag = Models.GQW_tag(tag_name='Нет доступных тэгов')
-                            db.add(s_no_tag)
+                        no_tag_for_vkr_request = (await db.execute(select(Models.GQW_tag.id).where(Models.GQW_tag.tag_name == 'Нет доступных тэгов'))).scalars().one_or_none()
+                        if not no_tag_for_vkr_request:
+                            add_no_tag_label = Models.GQW_tag(tag_name='Нет доступных тэгов')
+                            db.add(add_no_tag_label)
                             await db.flush()
-                            sm_no_tag = Models.Middle(vkr_id=updated_gqw_id, tags_id=s_no_tag.id)
+                            add_vkr_and_tag_relation = Models.Middle(vkr_id=updated_vkr_id, tags_id=add_no_tag_label.id)
                             await db.flush()
                         else:
-                            sm_no_tag = Models.Middle(vkr_id=updated_gqw_id, tags_id=req_no_tag)
-                            db.add(sm_no_tag)
+                            add_vkr_and_tag_relation = Models.Middle(vkr_id=updated_vkr_id, tags_id=no_tag_for_vkr_request)
+                            db.add(add_vkr_and_tag_relation)
                             await db.flush()
                     
-                    
-                    util.create_compressed_gqw(contents, filepath_compressed, filename)
-                    util.create_abstract_file(text_rus, text_en, filepath_abstract, filename)
+                    util.create_compressed_vkr(contents, filename)
+                    util.create_abstract_file(text_rus, text_en, filename)
                     return 'The file is uploaded'
                 else:
                     return 'Filename already exists'
@@ -201,53 +210,54 @@ async def upload_gqw(data, file, db):
 
 
 
-async def update_gqw(data, db):
+async def update_vkr(data, db):
     try:
-        update_filter_dict={}
+        update_vkr_values_dict={}
         if (await db.execute(select(Models.GQW_model).options(joinedload(Models.GQW_model.type_of_qualification), joinedload(Models.GQW_model.supervisor_gqw), joinedload(Models.GQW_model.supervisor_gqw).joinedload(Models.GQW_supervisor.department_gqw), joinedload(Models.GQW_model.supervisor_gqw).joinedload(Models.GQW_supervisor.degree_gqw),joinedload(Models.GQW_model.tag_gqw)).where(Models.GQW_model.reference == data.reference))).scalars().unique().one_or_none():
             if data.supervisor:
                 if (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none():
-                    supervisor_new = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none()
-                    update_filter_dict['supervisor_id'] = supervisor_new.id
+                    supervisor = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none()
+                    update_vkr_values_dict['supervisor_id'] = supervisor.id
                 else:
                     return f'supervisor - {data.supervisor} - is not searched'
             if data.qualification:
                 if (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == data.qualification))).scalars().one_or_none():
-                    qualification_request = (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == data.qualification))).scalars().one_or_none()
-                    update_filter_dict['qualification_id'] = qualification_request.id
+                    qualification = (await db.execute(select(Models.GQW_qualification).where(Models.GQW_qualification.qualification == data.qualification))).scalars().one_or_none()
+                    update_vkr_values_dict['qualification_id'] = qualification.id
                 else:
                     return f'qualification - {data.qualification} -  is not found'
             if data.theme:
-                update_filter_dict['theme'] = data.theme
+                update_vkr_values_dict['theme'] = data.theme
             if data.abstract:
-                update_filter_dict['abstract'] = data.abstract
-            if update_filter_dict:
-                await db.execute(update(Models.GQW_model).where(Models.GQW_model.reference== data.reference).values(update_filter_dict))
+                update_vkr_values_dict['abstract'] = data.abstract
+            if update_vkr_values_dict:
+                await db.execute(update(Models.GQW_model).where(Models.GQW_model.reference== data.reference).values(update_vkr_values_dict))
                 await db.commit()  
-            updated_gqw= (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().one_or_none()
+            
+            vkr= (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().one_or_none()
             if data.tags:
-                s_tag_delete= (await db.execute(select(Models.Middle).where(Models.Middle.vkr_id == updated_gqw.id))).scalars().all()
-                if s_tag_delete:
-                    for i in s_tag_delete:
+                vkr_unmatched_tags= (await db.execute(select(Models.Middle).where(Models.Middle.vkr_id == vkr.id))).scalars().all()
+                if vkr_unmatched_tags:
+                    for i in vkr_unmatched_tags:
                         await db.delete(i)
                         await db.commit()
-                data_tags = str(data.tags)
-                for tag in data_tags.split(','):
+                tags = str(data.tags)
+                for tag in tags.split(','):
                     tag = tag.strip()
                     if not (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag))).scalars().one_or_none():
-                        s2 = Models.GQW_tag(tag_name=str(tag).strip())
-                        db.add(s2)
+                        add_tag = Models.GQW_tag(tag_name=str(tag).strip())
+                        db.add(add_tag)
                         await db.flush()
-                        sm = Models.Middle(vkr_id=updated_gqw.id, tags_id=s2.id)
-                        db.add(sm)
-                        s3 = Models.GQW_vector(vector=
-                            model.encode(tag.lower()), tag_id=s2.id)
-                        db.add(s3)
+                        add_vkr_and_tag_relation = Models.Middle(vkr_id=vkr.id, tags_id=add_tag.id)
+                        db.add(add_vkr_and_tag_relation)
+                        add_vector = Models.GQW_vector(vector=
+                            model.encode(tag.lower()), tag_id=add_tag.id)
+                        db.add(add_vector)
                         await db.flush()
                     else:
                         tags = (await db.execute(select(Models.GQW_tag).where(Models.GQW_tag.tag_name == tag))).scalars().one_or_none()
-                        sm = Models.Middle(vkr_id=updated_gqw.id, tags_id=tags.id)
-                        db.add(sm)
+                        add_vkr_and_tag_relation = Models.Middle(vkr_id=vkr.id, tags_id=tags.id)
+                        db.add(add_vkr_and_tag_relation)
                         await db.flush()
             return f'{data.reference} is updated'
         else:
@@ -262,20 +272,20 @@ async def update_supervisor(data, db):
     try:
         async with db.begin():
             if not (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none():
-                s5 = Models.Supervisor_department(department=data.department)
-                db.add(s5)
+                add_department = Models.Supervisor_department(department=data.department)
+                db.add(add_department)
                 await db.flush()
             if not (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none():
-                s6 = Models.Supervisor_degree(degree=data.degree)
-                db.add(s6)
+                add_degree = Models.Supervisor_degree(degree=data.degree)
+                db.add(add_degree)
                 await db.flush()
             if not (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none():
-                dep = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
-                deg = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
+                departemnt = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none()
+                degree = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none()
 
-                s4 = Models.GQW_supervisor(
-                    name=data.supervisor, department_id=dep.id, degree_id=deg.id)
-                db.add(s4)
+                add_supervisor = Models.GQW_supervisor(
+                    name=data.supervisor, department_id=departemnt.id, degree_id=degree.id)
+                db.add(add_supervisor)
                 await db.flush()
                 return f'{data.supervisor} is uploaded'
             else:
@@ -300,7 +310,7 @@ async def post_passkey(passkey: DTO.PassKey, db):
     try:
         password = util.generate_key()
 
-        gqw_id_converted = uuid.UUID(passkey.gqw_id)
+        vkr_id_converted = uuid.UUID(passkey.vkr_id)
         async with db.begin():
             visitor_request = await db.execute(select(Models.Visitor).where(Models.Visitor.visitor_id == passkey.visitor_id))
             if not visitor_request.scalars().one_or_none():
@@ -308,9 +318,9 @@ async def post_passkey(passkey: DTO.PassKey, db):
                 db.add(s1)
                 await db.flush()
 
-            passkey_request = await db.execute(select(Models.PassKeys).where(and_(Models.PassKeys.token_encoded == password, Models.PassKeys.gqw_id == gqw_id_converted, Models.PassKeys.visitor_f == passkey.visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))
+            passkey_request = await db.execute(select(Models.PassKeys).where(and_(Models.PassKeys.token_encoded == password, Models.PassKeys.gqw_id == vkr_id_converted, Models.PassKeys.visitor_f == passkey.visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))
             if not passkey_request.scalars().one_or_none():
-                s2 = Models.PassKeys(token_encoded = password, date_of_get=datetime.datetime.now(), date_expired=(datetime.datetime.now() + timedelta(days=1)), visitor_f= passkey.visitor_id, gqw_id= gqw_id_converted)
+                s2 = Models.PassKeys(token_encoded = password, date_of_get=datetime.datetime.now(), date_expired=(datetime.datetime.now() + timedelta(days=1)), visitor_f= passkey.visitor_id, vkr_id= vkr_id_converted)
                 db.add(s2)
                 await db.flush()
                 return password
@@ -320,16 +330,16 @@ async def post_passkey(passkey: DTO.PassKey, db):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Something went wrong: {e}')
 
 
-async def get_passkey(password: str, gqw_id: str, visitor_id, db):
+async def get_passkey(password: str, vkr_id: str, visitor_id, db):
     try:
         passkey_request = await db.execute(select(Models.PassKeys).join(Models.Visitor).where(and_(Models.PassKeys.visitor_f == visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))
         if visitor_id and passkey_request.scalars().unique().all():
             return [{'id': f'{item}'} for item in (await db.execute(select(Models.PassKeys.gqw_id).join(Models.Visitor).where(and_(Models.PassKeys.visitor_f == visitor_id, Models.PassKeys.date_expired >= datetime.datetime.now())))).scalars().unique().all()]
-        if gqw_id:
-            gqw_id_converted = uuid.UUID(gqw_id)
-            passkey_request_with_qqw_id = await db.execute(select(Models.PassKeys).join(Models.Visitor).where(and_(Models.PassKeys.gqw_id == gqw_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())))
-            if passkey_request_with_qqw_id.scalars().one_or_none():  
-                return [{'id': f'{item}'} for item in (await db.execute(select(Models.PassKeys.gqw_id).join(Models.Visitor).where(and_(Models.PassKeys.gqw_id == gqw_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())))).scalars().unique().all()]
+        if vkr_id:
+            vkr_id_converted = uuid.UUID(vkr_id)
+            passkey_request_with_vkr_id = await db.execute(select(Models.PassKeys).join(Models.Visitor).where(and_(Models.PassKeys.gqw_id == vkr_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())))
+            if passkey_request_with_vkr_id.scalars().one_or_none():  
+                return [{'id': f'{item}'} for item in (await db.execute(select(Models.PassKeys.gqw_id).join(Models.Visitor).where(and_(Models.PassKeys.gqw_id == vkr_id_converted,  Models.PassKeys.token_encoded == password, Models.PassKeys.date_expired >= datetime.datetime.now())))).scalars().unique().all()]
             else:
                 return 'Unvalid key'
         else:
@@ -338,7 +348,7 @@ async def get_passkey(password: str, gqw_id: str, visitor_id, db):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Something went wrong: {e}')
 
 
-async def delete_gqw(data, db):
+async def delete_vkr(data, db):
     try:
         if f'{data.reference}' in os.listdir(compressed_pdf_folder_path):
             os.remove(f'{compressed_pdf_folder_path}/{data.reference}')
@@ -346,8 +356,8 @@ async def delete_gqw(data, db):
             os.remove(f'{abstract_folder_path}/{data.reference}')
 
         if (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().first():
-            record = (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().first()
-            await db.delete(record)
+            vkr = (await db.execute(select(Models.GQW_model).where(Models.GQW_model.reference == data.reference))).scalars().first()
+            await db.delete(vkr)
             await db.commit()
             return f'{data.reference} is deleted'
         else:
@@ -362,8 +372,8 @@ async def delete_tag(data, db):
     try:
         if (await db.scalar(select(func.count(Models.GQW_tag.id)))) > 2:
             if (await db.execute(select(Models.GQW_tag).join(Models.GQW_vector).where(Models.GQW_tag.tag_name == data.tag))).scalars().one_or_none():
-                record = (await db.execute(select(Models.GQW_tag).join(Models.GQW_vector).where(Models.GQW_tag.tag_name == data.tag))).scalars().one()
-                await db.delete(record)
+                tag = (await db.execute(select(Models.GQW_tag).join(Models.GQW_vector).where(Models.GQW_tag.tag_name == data.tag))).scalars().one()
+                await db.delete(tag)
                 await db.commit()
                 return f'{data.tag} is deleted'
             else:
@@ -380,8 +390,8 @@ async def delete_department(data, db):
     try:
         if (await db.scalar(select(func.count(Models.Supervisor_department.id)))) > 2:
             if (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one_or_none():
-                record = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one()
-                await db.delete(record)
+                department = (await db.execute(select(Models.Supervisor_department).where(Models.Supervisor_department.department == data.department))).scalars().one()
+                await db.delete(department)
                 await db.commit()
                 return f'{data.department} is deleted'
             else:
@@ -398,8 +408,8 @@ async def delete_degree(data, db):
     try:
         if (await db.scalar(select(func.count(Models.Supervisor_degree.id)))) > 2:
             if (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one_or_none():
-                record = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one()
-                await db.delete(record)
+                degree = (await db.execute(select(Models.Supervisor_degree).where(Models.Supervisor_degree.degree == data.degree))).scalars().one()
+                await db.delete(degree)
                 await db.commit()
                 return f'{data.degree} is deleted'
             else:
@@ -415,8 +425,8 @@ async def delete_supervisor(data, db):
     try:
         if (await db.scalar(select(func.count(Models.GQW_supervisor.id)))) > 2:
             if (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one_or_none():
-                record = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one()
-                await db.delete(record)
+                supervisor = (await db.execute(select(Models.GQW_supervisor).where(Models.GQW_supervisor.name == data.supervisor))).scalars().one()
+                await db.delete(supervisor)
                 await db.commit()
                 return f'{data.supervisor} is deleted'
             else:
@@ -433,13 +443,8 @@ async def replace_file(folder_name, file, db):
         if file.filename.endswith('.pdf'):
             filename_from_db = (await db.execute(select(Models.GQW_model.reference).where(Models.GQW_model.reference == file.filename))).scalars().one_or_none()
             if filename_from_db:
-                filepath = ''
-                if folder_name == compressed_pdf_folder_path:
-                    filepath = compressed_pdf_folder_path
-                else:
-                    filepath = abstract_folder_path
                 contents = file.file
-                with open(os.path.join(filepath, file.filename), 'wb') as buffer:
+                with open(os.path.join(folder_name, file.filename), 'wb') as buffer:
                     shutil.copyfileobj(contents, buffer)
                 return 'file is changed'
             else:
@@ -455,24 +460,24 @@ async def replace_file(folder_name, file, db):
 
 def recreate_full_pdf_version():
     for file in os.listdir(compressed_pdf_folder_path):
-        inputpdf = PdfReader(open(os.path.join(compressed_pdf_folder_path, file), 'rb'))
+        input_pdf = PdfReader(open(os.path.join(compressed_pdf_folder_path, file), 'rb'))
         output = PdfWriter()
 
-        len_pdf = len(inputpdf.pages)
+        len_pdf = len(input_pdf.pages)
         if len_pdf > 92:
             len_pdf = 92
         for i in range(1, len_pdf):
             if i in range(1, 4):
-                if not re.search(r'ЗАДАНИЕ\s+НА\s+', inputpdf.pages[i].extract_text(), flags=re.IGNORECASE):
-                    if len(inputpdf.pages[i].images) == 0:
-                        output.add_page(inputpdf.pages[i])
+                if not re.search(r'ЗАДАНИЕ\s+НА\s+', input_pdf.pages[i].extract_text(), flags=re.IGNORECASE):
+                    if len(input_pdf.pages[i].images) == 0:
+                        output.add_page(input_pdf.pages[i])
             if i in range(4, len_pdf-30):
-                output.add_page(inputpdf.pages[i])
+                output.add_page(input_pdf.pages[i])
             if i in range(len_pdf-30, len_pdf):
-                if re.search(r'Приложени', inputpdf.pages[i].extract_text(), flags=re.IGNORECASE):
+                if re.search(r'Приложени', input_pdf.pages[i].extract_text(), flags=re.IGNORECASE):
                     break
                 else:
-                    output.add_page(inputpdf.pages[i])
+                    output.add_page(input_pdf.pages[i])
         with open(os.path.join(compressed_pdf_folder_path, file), 'wb') as pdf:
             output.write(pdf)
             pdf.close()

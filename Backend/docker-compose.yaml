@@ -10,8 +10,10 @@ services:
      - db
    volumes:
     - ./app:/Backend/app
+    - /etc/localtime:/etc/localtime:ro
+    - /etc/timezone:/etc/timezone:ro
    environment:
-      - DATABASE_URL="postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres-repositorium/${DB_NAME}"
+      DATABASE_URL: "postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres-repositorium/${DB_NAME}"
    ports:
     - '8001:8000'
    networks:
@@ -25,6 +27,7 @@ services:
       POSTGRES_USER: "${DB_USER}"
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
       POSTGRES_DB: "${DB_NAME}"
+      TZ: Europe/Moscow
     ports:
      - "${DB_PORT}:5432"
     volumes:
@@ -38,30 +41,32 @@ services:
       retries: 5
     restart: always
   
-  nginx-client:
-    image: nginx:latest
-    ports:
-     - '81:80'
-    volumes:
-    - "./app:/usr/share/nginx/html/"
-    - "./app/compressed:/usr/share/nginx/html/compressed"
-    - "./nginx.conf:/etc/nginx/nginx.conf"
-    networks:
-     - rep-network
-    restart: always
+  # nginx-client:
+  #   image: nginx:latest
+  #   ports:
+  #    - '81:80'
+  #   volumes:
+  #   - "./app:/usr/share/nginx/html/"
+  #   - "./app/compressed:/usr/share/nginx/html/compressed"
+  #   - "./nginx.conf:/etc/nginx/nginx.conf"
+  #   networks:
+  #    - rep-network
+  #   restart: always
   ollama:
     image: ollama/ollama:latest
+    environment:
+      - OLLAMA_KEEP_ALIVE=0
     platform: linux/amd64
     container_name: ollama
     volumes:
       - ollama_data:/root/.ollama
     ports:
       - "11435:11434"
-    deploy:
-      resources:
-        limits:
-          cpus: '10'
-    cpuset: "0-9" 
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    # cpuset: "0-3" 
     # deploy:
     #   resources:
     #     reservations:
@@ -73,29 +78,63 @@ services:
     networks:
       - rep-network
 
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
+  # open-webui:
+  #   image: ghcr.io/open-webui/open-webui:main
+  #   container_name: open-webui
+  #   ports:
+  #     - "3000:8080"
+  #   volumes:
+  #     - open-webui_data:/app/backend/data
+  #     # - open-webui_data:/backend/data
+  #   environment:
+  #     # - OLLAMA_BASE_URL=http://rep-network:11435
+  #     - OLLAMA_BASE_URL=http://ollama:11434
+  #     # - CORS_ALLOW_ORIGIN=http://ollama
+  #     # - CORS_ALLOW_ORIGIN=http://rep-network
+  #     - CORS_ALLOW_ORIGIN=http://localhost:3000
+  #   depends_on:
+  #     - ollama
+  #   restart: unless-stopped
+  #   networks:
+  #     - rep-network
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
     ports:
-      - "3000:8080"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - open-webui_data:/app/backend/data
-      # - open-webui_data:/backend/data
+      - minio_data:/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
-      # - OLLAMA_BASE_URL=http://rep-network:11435
-      - OLLAMA_BASE_URL=http://ollama:11434
-      # - CORS_ALLOW_ORIGIN=http://ollama
-      # - CORS_ALLOW_ORIGIN=http://rep-network
-      - CORS_ALLOW_ORIGIN=http://localhost:3000
-    depends_on:
-      - ollama
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
     networks:
       - rep-network
 
+  # createbuckets:
+  #   image: minio/mc:latest
+  #   depends_on:
+  #     minio:
+  #       condition: service_healthy
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #       mc alias set local http://minio:9000 minioadmin minioadmin &&
+  #       mc mb local/table-rags --ignore-existing &&
+  #       echo 'bucket ready'
+  #     "
 volumes:
   ollama_data:
-  open-webui_data:
+  minio_data:
+  # open-webui_data:
 
 networks:
   rep-network:

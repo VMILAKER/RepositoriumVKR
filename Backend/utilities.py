@@ -1,6 +1,8 @@
-import os
+import json
 import random
 import re
+from datetime import timedelta
+from io import BytesIO
 from typing import List
 
 import psycopg2.extras
@@ -53,18 +55,19 @@ def build_filter(filter_dict: dict) -> List:
                     filters.append(getattr(Models.GQW_model, key) == value)
     return filters
 
-def generate_gqw_card(contents):
+
+def generate_vkr_card(contents):
     list_word = ['аннотация',
                 'annotation', 'abstract']
     
     title = extract_text(contents, page_numbers=[0])
-    text_ex = re.split(r'\n\n', title, 4)
-    text_ex[4] = text_ex[4].replace('\n', '')
+    title_cleaned = re.split(r'\n\n', title, 4)
+    title_cleaned[4] = title_cleaned[4].replace('\n', '')
     
     theme=''
-    if re.search(r'(.*?)Выпускная', text_ex[4]):
+    if re.search(r'(.*?)Выпускная', title_cleaned[4]):
         theme = re.search(
-            r'(.*?)Выпускная', text_ex[4]).group(1).strip().upper()
+            r'(.*?)Выпускная', title_cleaned[4]).group(1).strip().upper()
         if re.search(r'<|>|^«|»$', theme):
             theme = re.sub(r'<|>|^«|»$', '', theme)
         if 'НАЗВАНИЕ ТЕМЫ РАБОТЫ:' in theme:
@@ -103,7 +106,6 @@ def generate_gqw_card(contents):
                 text_rus[0] = text[j]
                 text_rus[1] = text[j+1]
                 
-    
     if text_rus:
         if re.search(r'\d+$', text_rus[1]):
             text_rus[1] = (re.sub(r'\d+$', '', text_rus[1])).strip()
@@ -114,9 +116,11 @@ def generate_gqw_card(contents):
     return theme, text_rus, text_en, qualification
 
 
-def create_abstract_file(rus_text:list, en_text:list, filepath:str, filename:str):
+def create_abstract_file(rus_text:list, en_text:list, filename:str):
+    buffer = BytesIO()
+
     styles = config.TextStyles()
-    doc = SimpleDocTemplate(os.path.join(filepath, filename), pagesize=A4)
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
     p1 = Paragraph(str(rus_text[0]).replace(
         "\n", "<br />"), styles.get_center_style())
 
@@ -127,8 +131,13 @@ def create_abstract_file(rus_text:list, en_text:list, filepath:str, filename:str
     p4 = Paragraph(str(en_text[1]).replace(
         "\n", "<br />"), styles.get_justify_style())
     doc.build([p1, p2, p3, p4],)
+    upload_file_minio(filename, buffer.getvalue(), config.get_bucket_name('abstract'))
+    buffer.close()
 
-def create_compressed_gqw(contents, filepath:str, filename):
+
+def create_compressed_vkr(contents, filename):
+    buffer = BytesIO()
+
     inputpdf = PdfReader(contents)
     output = PdfWriter()
 
@@ -148,8 +157,9 @@ def create_compressed_gqw(contents, filepath:str, filename):
                 break
             else:
                 output.add_page(inputpdf.pages[i])
-    with open(os.path.join(filepath, filename), 'wb') as f:
-        output.write(f)
+    output.write(buffer)
+    upload_file_minio(filename, buffer.getvalue(), config.get_bucket_name('compressed'))
+    buffer.close()
 
 
 def generate_key():
@@ -160,3 +170,55 @@ def generate_key():
         password_new += charset[random.randint(0, len(charset)-1)]
     
     return password_new
+
+
+def upload_file_minio(filename:str, file_data, bucket_name_env:str):
+        client = config.minio_client()
+
+        bucket_name = config.get_bucket_name(bucket_name_env)
+
+        found = client.bucket_exists(bucket_name)
+        if not found:
+            client.make_bucket(bucket_name)
+            print("Created bucket", bucket_name)
+        else:
+            print("Bucket", bucket_name, "already exists")
+        public_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"AWS": ["*"]},
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:aws:s3:::{bucket_name}/*"]
+                }
+            ]
+        }
+
+        # 3. Apply the policy to the bucket
+        client.set_bucket_policy(bucket_name, json.dumps(public_policy))
+        if hasattr(file_data, 'seek'):
+            file_data.seek(0)
+        if isinstance(file_data, bytes):
+            data_to_upload = file_data
+            file_length = len(file_data)
+        # else:
+        #     if hasattr(file_data, 'seek'):
+        #         file_data.seek(0)
+        #     data_to_upload = file_data
+        #     file_length = len(data_to_upload)
+    
+        client.put_object(
+            bucket_name=bucket_name, object_name=filename, data=BytesIO(data_to_upload), length=file_length, content_type='application/pdf', metadata={"Content-Disposition": "inline"} 
+        )
+        return 'Success'
+
+
+def generate_presigned_url(filename:str, bucket_type:str):
+    client = config.minio_client()
+    
+    return client.presigned_get_object(
+        bucket_name=config.get_bucket_name(bucket_type),
+        object_name=filename,
+        expires=timedelta(minutes=120)
+    )

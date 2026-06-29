@@ -10,11 +10,11 @@ class GraduateQuallificationWork(BaseModel):
 
 class PassKey(BaseModel):
     visitor_id: str
-    gqw_id: str
+    vkr_id: str
 
 class CheckPassword(BaseModel):
     password: str
-    gqw_id: str
+    vkr_id: str
 
 class GraduateQuallificationWork_update(BaseModel):
     theme: Optional[str] = None

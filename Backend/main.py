@@ -18,11 +18,5 @@ app.add_middleware(CORSMiddleware, allow_origins=origins,
 
 
 if __name__ == '__main__':
-    # Base.metadata._all(engine)
-    # for i in os.listdir('./app/compressed'):
-    #     os.remove(f'./app/compressed/{i}')
-    # for j in os.listdir('./app/full_pdf'):
-    #     os.remove(f'./app/full_pdf/{j}')
-    # asyncio.run(init_models())
     uvicorn.run(app='main:app', host='0.0.0.0',
                 port=8000, reload=True, workers=3)

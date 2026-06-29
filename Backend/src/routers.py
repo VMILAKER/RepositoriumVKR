@@ -1,6 +1,7 @@
 
 import requests
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import (APIRouter, Depends, File, Header, HTTPException,
+                     UploadFile, status)
 from pydantic import Json
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,31 +9,58 @@ import config
 import src.dto as DTO
 import src.services as Service
 from src.database import get_db_sql
+from utilities import generate_presigned_url
 
-router = APIRouter()
+
+async def verify_internal_api_key(
+    x_internal_api_key: str | None = Header(None, alias='API-Key'),
+) -> bool:
+    internal_api_key = config.get_backend_api_key()
+
+    if not x_internal_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Internal backend API key is missing',
+        )
+
+    if not internal_api_key or x_internal_api_key != internal_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Invalid internal backend API key',
+        )
+    return True
+
+
+router = APIRouter(
+    dependencies=[Depends(verify_internal_api_key)],
+    responses={
+        401: {'description': 'Invalid or missing internal API key'},
+    },
+)
 compressed_pdf_folder_path, abstract_folder_path = config.get_pdf_folders()
 
-@router.get('/get_gqw', tags=['gqw'])
+
+@router.get('/get_vkr', tags=['vkr'])
 async def get(theme_: str = None, supervisor_: str = None, qualification_: str = None, tags_: str = None, db: AsyncSession = Depends(get_db_sql)):
-    return await Service.get_gqw(theme_, supervisor_, qualification_, tags_, db)
+    return await Service.get_vkr(theme_, supervisor_, qualification_, tags_, db)
 
-@router.post('/upload_gqw', tags=['gqw'])
+@router.post('/upload_vkr', tags=['vkr'])
 async def post(data: Json[DTO.GraduateQuallificationWork]= Depends(), file: UploadFile= File(...), db: AsyncSession = Depends(get_db_sql)):
-    return await Service.upload_gqw(data, file, db)
+    return await Service.upload_vkr(data, file, db)
 
-@router.put('/update_gqw', tags=['gqw'])
+@router.put('/update_vkr', tags=['vkr'])
 async def update_data(data: DTO.GraduateQuallificationWork_update, db: AsyncSession = Depends(get_db_sql)):
-    return await Service.update_gqw(data, db)
+    return await Service.update_vkr(data, db)
 
-@router.delete('/delete_gqw', tags=['gqw'])
+@router.delete('/delete_vkr', tags=['vkr'])
 async def delete_data(data: DTO.DeleteGQW, db: AsyncSession = Depends(get_db_sql)):
-    return await Service.delete_gqw(data, db)
+    return await Service.delete_vkr(data, db)
 
-@router.get('/get_gqw_by_passkey', tags=['gqw', 'passkey'])
-async def search_passkey(password: str=None, gqw_id: str=None, visitor_id: str=None, db: AsyncSession = Depends(get_db_sql)):
-    return await Service.get_passkey(password, gqw_id, visitor_id, db)
+@router.get('/get_vkr_by_passkey', tags=['vkr', 'passkey'])
+async def search_passkey(password: str=None, vkr_id: str=None, visitor_id: str=None, db: AsyncSession = Depends(get_db_sql)):
+    return await Service.get_passkey(password, vkr_id, visitor_id, db)
 
-@router.get('/get_preloaded_data', tags=['gqw'])
+@router.get('/get_preloaded_data', tags=['vkr'])
 async def preloaded_data(db: AsyncSession = Depends(get_db_sql)):
     return await Service.get_preloaded_data(db)
 
@@ -78,7 +106,7 @@ async def delete_degree(data: DTO.DeleteDegree, db: AsyncSession = Depends(get_d
 @router.post('/test_ollama')
 async def test_ollama(text: str=None):
     try:
-        if text[1] != 'No data':
+        if text != 'No data':
             payload= config._create_payload(text)
             tags_req = requests.post(config.get_ollama_api_url(),json=payload)
             print(tags_req.status_code)
@@ -87,3 +115,7 @@ async def test_ollama(text: str=None):
                 # print(tags_req.json()['response'])
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f'{e}')
+    
+@router.post('test_minio_url')
+async def test_url(filename: str=None, bucket_type: str='compressed'):
+    return generate_presigned_url(filename, bucket_type)
