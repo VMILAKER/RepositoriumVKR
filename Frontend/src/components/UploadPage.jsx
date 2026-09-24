@@ -5,42 +5,27 @@ import { UploadOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Select, Space, Upload,  Checkbox, message} from 'antd';
 
 
-const formUpload = {
-  supervisor: '', 
-  reference: ''
-};
-
-const layout = {
-  labelCol: { span: 8 },
-  wrapperCol: { span: 16 },
-};
-
-const tailLayout = {
-  wrapperCol: { offset: 6, span: 12 },
-};
-
-const stylesShared = {
-  label:{
-      color:'#ffffff',
-  }
-};
-
 function UploadVKR() {
     const [getSupervisors, setSupervisors] = useState([])
     const [getReferences, setReferences] = useState([])
     const [getDepartments, setDepartments] = useState([])
     const [getDegrees, setDegrees] = useState([])
-    const [dataUpload, setDataUpload] = useState(formUpload);
+    const [dataUpload, setDataUpload] = useState(util.uploadForm);
     const [selectedFile, setSelectedFile] = useState(null);
     const [isChecked, setChecked] = useState(false);
+    const [getApiKey, SetApiKey] = useState(util.uploadHeaders);
     const [messageApi, contextHolder] = message.useMessage();
     const [form] = Form.useForm();
-    const { Option } = Select;
 
-    const url = "http://url/repository"
+    const backend_url = import.meta.env.VITE_BACKEND_URL;
+    const api_key = import.meta.env.VITE_API_KEY;
+    const headers = { "API_Key": api_key };
+    
 
-    const messageSystem = (type_message, params, time) => {
+    
+    const messageSystem = (key, type_message, params, time) => {
         messageApi.open({
+            key: key, 
             type: type_message,
             content: params,
             duration: time,
@@ -54,17 +39,16 @@ function UploadVKR() {
         beforeUpload: info => {
         const isPdf = info.type === 'application/pdf'
         if (!isPdf) {
-            messageSystem('error', `${info.name} не является pdf файлом`, 4)
+            messageSystem('errorKey', 'error', `${info.name} не является pdf файлом`, 4)
             return isPdf || Upload.LIST_IGNORE
         }
         else {
             if (!(getReferences.includes(info.name, 0))) {
                 setSelectedFile(info)
-                setDataUpload({...dataUpload, reference: info.name})
                 return false
             }
             else {
-                messageSystem('error', `${info.name} уже существует`, 4)
+                messageSystem('errorKey', 'error', `${info.name} уже существует`, 4)
                 return isPdf || Upload.LIST_IGNORE
             }
         }
@@ -73,11 +57,17 @@ function UploadVKR() {
 
     const onResetUpload = () => {
         form.resetFields()
-        setDataUpload(formUpload)
+        setDataUpload(util.formUpload)
     };
 
     const SelectChange_supervisor_upload = (event) => {
-        setDataUpload({...dataUpload, supervisor: event})
+        if (!(event === 'No data') ){
+            setDataUpload({...dataUpload, supervisor: event})
+        }
+        else {
+            messageSystem('errorSupervisor', 'error', 'Введите руководителя ВКР', 4)
+        }
+        
     };
 
     const SelectChange_department_upload = (event) => {
@@ -92,14 +82,18 @@ function UploadVKR() {
         setDataUpload({...dataUpload, [event.target.name]: event.target.value})
     };
 
+    const handleApiKey = (event) => {
+        SetApiKey({...getApiKey, [event.target.name]: event.target.value})
+        
+    }
     const handleSubmit = async event => {
         event.preventDefault()
     };
     
-    const fetchPrior = async(url_) => {
+    const fetchPrior = async(url_, headers) => {
         try {
             let getOptions = [];
-            await axios.get(`${url_}/preloaded_data`).then(r => {
+            await axios.get(`${url_}/get_preloaded_data`, {headers}).then(r => {
                 getOptions = r.data
                 if (getOptions.length > 0) {
                     setReferences(getOptions[1])
@@ -111,37 +105,39 @@ function UploadVKR() {
         }
         catch(err) {
             console.error('Error', err)
+                
             alert(`Something wrong: ${err}`)
         }
     };
 
-    const uploadData = async(upload_dict, url_) => {
+    const uploadData = async(upload_dict, url_, headers) => {
         const formData = new FormData()
         formData.append('file', selectedFile)
+        
         try {
-            let empty_fields =0           
-            for (let value of Object.values(upload_dict)) {
-                if (!value) {
-                    empty_fields++
-                }
-            }
-            if (empty_fields == 0) {
-                    messageSystem('loading', 'Добавление', 15)
-                    await axios.post(`${url_}/create_file`, formData).then(r => {
-                        let responce = r.data
-                        if (responce === 'The file is uploaded') {
-                            axios.post(`${url_}/post`, upload_dict)
-                            messageSystem('success', `ВКР загружена!`, 4)
-                            fetchPrior(url)
+            if (!Object.values(upload_dict).some(value => value === null || value === undefined || value === "") && selectedFile) {
+                if (api_key === getApiKey['API_Key']) {
+                    messageSystem('loadKey', 'loading', 'Добавление', 120)
+
+                    await axios.post(`${url_}/upload_vkr`, formData, {params: {'data': JSON.stringify(upload_dict)}, headers:headers}).then(r => {
+                        const response = r.data
+                        if (response === 'The file is uploaded') {
+                            messageApi.destroy('loadKey',)
+                            messageSystem('successKey', 'success', `ВКР загружена!`, 4)
+                            fetchPrior(url_, headers)
                         }
                         else {
-                            message.destroy('loadingData')
-                            messageSystem('error', `${responce} уже существует`, 4)
+                            messageApi.destroy('loadKey')
+                            messageSystem('errorKey', 'error', `${response} уже существует`, 4)
                         }
                     })
+                }
+                else {
+                    messageSystem('errorApi', 'error', 'Неверный API-ключ!', 4)
+                }
             }
             else {
-                messageSystem('error', "Не все поля заполнены!", 4)
+                messageSystem('errorKey', 'error', "Не все поля заполнены!", 4)
             }
         }
         catch(err) {
@@ -197,8 +193,8 @@ function UploadVKR() {
     };
 
     useEffect(() => {
-        fetchPrior(url)
-    }, [url]);
+        fetchPrior(backend_url, headers)
+    }, [backend_url]);
     
     return(
         <div className="flex flex-col pt-2 place-items-center">
@@ -206,7 +202,7 @@ function UploadVKR() {
             <div className='flex w-290 bg-slate-500 p-6 m-2 rounded-md text-wrap'>
                 <div className='w-180'>
                     <Form
-                        {...layout}
+                        {...util.layout}
                         form={form}
                         layout='vertical'
                         name="upload_data"
@@ -217,15 +213,18 @@ function UploadVKR() {
                         <Checkbox onChange={() => {setChecked(!isChecked)}}><span className='text-white'>Руководителя нет в списке</span></Checkbox>
                         {onChange_checkboxSupervisor()}
                     </Form.Item>
-                    <Form.Item name='reference' label={<span className='text-white'>Файл ВКР (.pdf)</span>} styles={stylesShared}>
+                    <Form.Item>
+                        <Input className='my-1' name="API_Key" placeholder='Введите API-ключ' onChange = {handleApiKey} allowClear/>
+                    </Form.Item>
+                    <Form.Item name='reference' label={<span className='text-white'>Файл ВКР (.pdf)</span>} styles={util.stylesShared}>
                         <Upload {...props}>
                         <Button icon={<UploadOutlined/>} >Click to upload</Button>
                         </Upload>
                     </Form.Item>  
-                    <Form.Item {...tailLayout}>
+                    <Form.Item {...util.tailLayout}>
                         <Space>
                         <Button onClick = {() =>{
-                            uploadData(dataUpload, url)
+                            uploadData(dataUpload, backend_url, getApiKey)
                         }
                             } type="primary" htmlType="submit">
                             Загрузить

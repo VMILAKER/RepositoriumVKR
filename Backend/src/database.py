@@ -15,7 +15,7 @@ async def get_db_sql():
     """Launch POSTGRESql database session 
 
     Yields:
-        _type_: Session
+        AsyncSession: Session
     """
 
     db = SessionLocal()
@@ -31,7 +31,7 @@ async def get_db_sql():
 
 async def init_models():
     async with engine.begin() as conn:
-        # await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
 

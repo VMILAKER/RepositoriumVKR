@@ -1,4 +1,5 @@
 import uuid
+from enum import Enum
 
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
@@ -8,109 +9,135 @@ from sqlalchemy.orm import relationship
 from src.database import Base
 
 
+@staticmethod
+def get_id():
+    return Column(UUID(as_uuid=True),default=uuid.uuid4, primary_key=True)
+
+
+class StatusTemplates(str, Enum):
+    UPLOADED = 'uploaded'
+    VIEW = 'viewed'
+    DELETED = 'deleted'
+    UPDATED = 'updated'
+
+
+class ElementTemplates(str, Enum):
+    VKR = 'vkr'
+    TAG = 'tag'
+    SUPERVISOR = 'supervisor'
+    DEPARTMENT = 'department'
+    DEGREE = 'degree'
+    USER = 'user'
+    PASSKEY = 'passkey'
+    FILE = 'file'
+
+
 class Middle(Base):
-    __tablename__ = 'model_tag'
+    __tablename__ = 'tag_vkr_wire'
 
     id= Column(Integer, index=True, primary_key=True)
-    vkr_id = Column(UUID(as_uuid=True), ForeignKey('gqw_data.id'))
-    tags_id = Column(UUID(as_uuid=True), ForeignKey('gqw_tags.id'))
+    vkr_id = Column(UUID(as_uuid=True), ForeignKey('vkr_data.id'))
+    tags_id = Column(UUID(as_uuid=True), ForeignKey('vkr_tags.id'))
 
 
 class GQW_model(Base):
-    __tablename__ = 'gqw_data'
+    __tablename__ = 'vkr_data'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                primary_key=True, default=uuid.uuid4)
+    id = get_id()
     theme = Column(String, index=True)
     
-    qualification_id  = Column(UUID(as_uuid=True), ForeignKey('gqw_qualifications.id'))
+    qualification_id  = Column(UUID(as_uuid=True), ForeignKey('vkr_qualifications.id'))
     type_of_qualification = relationship('GQW_qualification', lazy='raise_on_sql') 
     
     abstract = Column(String)
     reference = Column(String)
     supervisor_id = Column(UUID(as_uuid=True), ForeignKey(
-        'gqw_supervisors.id'))
-    supervisor_gqw = relationship('GQW_supervisor', lazy='raise_on_sql')
+        'vkr_supervisors.id'))
+    supervisor_vkr = relationship('GQW_supervisor', lazy='raise_on_sql')
 
-    tag_gqw = relationship('GQW_tag', secondary='model_tag', back_populates='gqw_id', lazy='raise_on_sql')
-    
+    tag_vkr = relationship('GQW_tag', secondary='tag_vkr_wire', back_populates='vkr_id', lazy='raise_on_sql')
 
-    # cascade="all, delete-orphan"
 
 class GQW_qualification(Base):
-    __tablename__ = 'gqw_qualifications'
+    __tablename__ = 'vkr_qualifications'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                primary_key=True, default=uuid.uuid4)
+    id = get_id()
     qualification = Column(String)
 
 
 class GQW_vector(Base):
-    __tablename__ = 'gqw_vectors'
+    __tablename__ = 'vkr_vectors'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                primary_key=True, default=uuid.uuid4)
+    id = get_id()
     vector = Column(VECTOR(768))
 
-    tag_id = Column(UUID(as_uuid=True), ForeignKey('gqw_tags.id'))
-    tag = relationship("GQW_tag", back_populates='vector_id')
+    tag_id = Column(UUID(as_uuid=True), ForeignKey('vkr_tags.id'))
+    tag = relationship('GQW_tag', back_populates='vector_id')
 
 class GQW_tag(Base):
-    __tablename__ = 'gqw_tags'
+    __tablename__ = 'vkr_tags'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                primary_key=True, default=uuid.uuid4)
+    id = get_id()
     tag_name = Column(String)
 
-    vector_id = relationship("GQW_vector", back_populates='tag', lazy='raise_on_sql')
-    gqw_id = relationship('GQW_model', secondary='model_tag', back_populates='tag_gqw')
+    vector_id = relationship('GQW_vector', back_populates='tag', lazy='raise_on_sql')
+    vkr_id = relationship('GQW_model', secondary='tag_vkr_wire', back_populates='tag_vkr')
 
 
 class GQW_supervisor(Base):
-    __tablename__ = 'gqw_supervisors'
+    __tablename__ = 'vkr_supervisors'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                default=uuid.uuid4, primary_key=True)
+    id = get_id()
     name = Column(String)
 
-    department_id = Column(UUID(as_uuid=True), ForeignKey('supervisor_department.id'))
-    department_gqw = relationship('Supervisor_department', lazy='raise_on_sql')
+    department_id = Column(UUID(as_uuid=True), ForeignKey('supervisor_departments.id'))
+    department_vkr = relationship('Supervisor_department', lazy='raise_on_sql')
 
-    degree_id = Column(UUID(as_uuid=True), ForeignKey('supervisor_degree.id'))
-    degree_gqw = relationship('Supervisor_degree', lazy='raise_on_sql')
+    degree_id = Column(UUID(as_uuid=True), ForeignKey('supervisor_degrees.id'))
+    degree_vkr = relationship('Supervisor_degree', lazy='raise_on_sql')
+
+
 
 class Supervisor_department(Base):
-    __tablename__ = 'supervisor_department'
+    __tablename__ = 'supervisor_departments'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                primary_key=True, default=uuid.uuid4)
+    id = get_id()
     department = Column(String, nullable=False)
 
 
 class Supervisor_degree(Base):
-    __tablename__ = 'supervisor_degree'
+    __tablename__ = 'supervisor_degrees'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                primary_key=True, default=uuid.uuid4)
+    id = get_id()
     degree = Column(String, nullable=False)
 
 
 class PassKeys(Base):
-    __tablename__ = 'pass_key'
+    __tablename__ = 'passkeys'
 
-    id = Column(UUID(as_uuid=True), index=True,
-                default=uuid.uuid4, primary_key=True)
+    id = get_id()
     token_encoded = Column(String)
     date_of_get = Column(DateTime)
     date_expired = Column(DateTime)
-    gqw_id = Column(UUID(as_uuid=True), index=True)
+    vkr_id = Column(UUID(as_uuid=True), index=True)
  
-    visitor_f= Column(String, ForeignKey('visitor_data.visitor_id'))
-    visitor_gqw = relationship('Visitor', lazy='raise_on_sql')
+    visitor_fk= Column(String, ForeignKey('visitors.visitor_id'))
+    visitor_vkr = relationship('Visitor', lazy='raise_on_sql')
+
     
 class Visitor(Base):
-    __tablename__ = 'visitor_data'
+    __tablename__ = 'visitors'
 
     id = Column(UUID(as_uuid=True), index=True,
-                default=uuid.uuid4)
+                    default=uuid.uuid4) 
     visitor_id = Column(String, index=True, primary_key=True)
+
+
+class Log(Base):
+    __tablename__ = 'logs'
+
+    id = get_id()
+    element = Column(String, index=True)
+    element_id = Column(String, index=True)
+    status = Column(String, index=True)
+    datetime = Column(DateTime)

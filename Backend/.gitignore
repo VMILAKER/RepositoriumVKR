@@ -5,3 +5,5 @@ r.txt
 .venv
 __pycache__
 volume
+alembic.ini
+alembic

@@ -11,14 +11,15 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@react-pdf-viewer/core": "^3.12.0",
     "@react-pdf-viewer/page-navigation": "^3.12.0",
+    "@react-pdf-viewer/toolbar": "^3.12.0",
     "@tailwindcss/vite": "^4.1.11",
     "antd": "^5.26.7",
     "axios": "^1.11.0",
-    "pdfjs-dist": "3.4.120",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-router-dom": "^7.10.1",
     "tailwindcss": "^4.1.11"
   },
@@ -35,15 +36,19 @@
   },
   "proxy": {
     "/.*(_get)": {
-      "target": "http://backend_url"
+      "target": "http://repositorium:8000"
     },
     "/upload.*(_post)": {
-      "target": "http://backend_url"
+      "target": [
+        "http://repositorium:8000",
+        "http://minio:9000/compressed",
+        "http://minio:9000/abtract"
+      ]
     },
     "/pdf_viewer.*": {
       "target": [
-        "http://localhost:81",
-        "http://localhost:81/full_pdf"
+        "http://minio:9000/compressed",
+        "http://minio:9000/abstract"
       ]
     }
   }

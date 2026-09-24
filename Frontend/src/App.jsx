@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { App_main} from './components/SearchPage.jsx';
 import {UploadVKR} from './components/UploadPage.jsx'
-import { PdfViewer } from './components/PdfViewer.tsx';
+import { PdfViewer } from './components/PdfViewer.jsx';
 
 function App() {
   return (

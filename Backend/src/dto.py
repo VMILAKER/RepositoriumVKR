@@ -30,7 +30,7 @@ class SupervisorUpdate(BaseModel):
     degree: str
 
 class DeleteGQW(BaseModel):
-    reference: str
+    vkr_filename: str
 
 class DeleteTag(BaseModel):
     tag:str

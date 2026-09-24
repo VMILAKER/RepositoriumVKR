@@ -1,40 +1,16 @@
 import { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import axios from 'axios'
+import { useNavigate } from 'react-router-dom';
 import { Button, Form, Input, Select, Space,List, Card, Spin, Collapse,Modal, InputNumber, Popover, notification } from 'antd';
 import {InfoCircleOutlined} from '@ant-design/icons'
 import * as util from './Utilities.jsx';
-
-
-const initialFormState = {
-  theme_:  '',
-  supervisor_: '',
-  qualification_: '',
-  tags_:''
-};
-
-const uploadKey = {
-  visitor_id: '',
-  gqw_id: '',
-  theme: ''
-}
-const checkKey = {
-  visitor_id: '',
-  password: '',
-  gqw_id: '',
-  theme: ''
-};
-
-const stylesShared = {
-  label:{
-      color:'#ffffff',
-  }
-};
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 
 function App_main() {
   const { Option } = Select;
   const refContainer= useRef(null);
-  const [dataGQW, setGQW] = useState(initialFormState);
+  const [dataGQW, setGQW] = useState(util.initialFormState);
   const [gqwForm, setGqwData] = useState([]);
   const [filter, setFilter] = useState(0);
   const [isLoading, setLoading] = useState(false);
@@ -44,17 +20,15 @@ function App_main() {
   const [getSupervisors, setSupervisors] = useState([]);
   const [getTags, setTags] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [getVisitorUpload, uploadVisitor] = useState(uploadKey);
-  const [visitor, setVisitor] = useState(checkKey);
+  const [getVisitorUpload, uploadVisitor] = useState(util.uploadKey);
+  const [visitor, setVisitor] = useState(util.checkKey);
   const [passkey, setPasskey] = useState([]);
   const [modal, contextHolder_modal] = Modal.useModal();
   const [widthB, setWidth] = useState(0);
 
-  const modalConfig = (item, name) => {
-    visitor['gqw_id'] = item
-    visitor['theme'] =name
-    getVisitorUpload['gqw_id'] = item
-    getVisitorUpload['theme'] = name
+  const modalConfig = (item, theme) => {
+    visitor['vkr_id'] = item
+    getVisitorUpload['vkr_id'] = item
     
     modal.confirm({
       title: 'Получить полную версию ВКР',
@@ -62,28 +36,26 @@ function App_main() {
       width: 450,
       state: {blur: false},
       okText: 'Проверить ключ',
-      onOk() {getPasskey(url, visitor)},
+      onOk() {getVkrByPasskey(backend_url, visitor, headers)},
       cancelText: "Отмена",
       onCancel() {handleCancel},
       content: (
         <div>
           <Input ref={refContainer} className='my-2' name="passkey" placeholder='Введите ключ доступа' onChange={inputPasskey} allowClear/>  
-          <Button style={{width: 370}} color="primary" variant='solid' onClick={() => uploadPasskey(url, getVisitorUpload)}>Получить ключ доступа к полному тексту ВКР</Button>
+          <Button style={{width: 370}} color="primary" variant='solid' onClick={() => uploadPasskey(backend_url, getVisitorUpload, theme, headers)}>Получить ключ доступа к полному тексту ВКР</Button>
         </div>
         )
       
     })
   }
-  const url = "http://url/repository"
+  const backend_url = import.meta.env.VITE_BACKEND_URL;
+  const pdf_external_url = import.meta.env.VITE_FRONTEND_EXTERNAL_URL;
+  const api_key = import.meta.env.VITE_API_KEY;
+  const compressed_path = import.meta.env.VITE_COMPRESSED_PATH;
+  const abstract_path = import.meta.env.VITE_ABSTRACT_PATH;
+ 
+  const headers = {'API_Key': api_key}
 
-  const layout = {
-    labelCol: { span: 8 },
-    wrapperCol: { span: 16 },
-    };
-
-    const tailLayout = {
-    wrapperCol: { offset: 6, span: 12 },
-    };
 
   const openNotificationWithIcon = (type, param) => {
     api[type]({
@@ -93,23 +65,22 @@ function App_main() {
   };
   
   const get_visitor_id = async() => {
-     const fpPromise = import('https://openfpcdn.io/fingerprintjs/v5')
-      .then(FingerprintJS => FingerprintJS.load())
-
-    await fpPromise.then(fp => fp.get())
-      .then(result => {
-        setVisitor({...visitor, visitor_id: (result.visitorId).toString()})
-        uploadVisitor({...getVisitorUpload, visitor_id: (result.visitorId).toString()})
-
-      }
-    )
+    // const FingerprintJS = await import('https://openfpcdn.io/fingerprintjs/v5');
+    const fp = await FingerprintJS.load();
+    const result = await fp.get();
+    
+    if (result && result.visitorId) {
+      const id = result.visitorId.toString();
+      setVisitor({...visitor, visitor_id: id})
+      uploadVisitor({...getVisitorUpload, visitor_id: id})
+    }
   };
   
 
   const fetchPrior = async(url_) => {
     try {
       let getOptions = [];
-      await axios.get(`${url_}/preloaded_data`).then(r => {
+      await axios.get(`${url_}/get_preloaded_data`, {headers}).then(r => {
         getOptions = r.data
         if (getOptions.length > 0) {
           setThemes(getOptions[0])
@@ -125,9 +96,9 @@ function App_main() {
   };
  
   useEffect(() => {
-    fetchPrior(url)
+    fetchPrior(backend_url)
     get_visitor_id()
-  }, [url]);
+  }, [backend_url]);
   
   useLayoutEffect(() => {
     if (refContainer.current) {
@@ -146,10 +117,9 @@ function App_main() {
     }
 
     try {
-      await axios.get(url_, {params} ).then(r => {
-        // console.log('response', r.data)
+      await axios.get(`${url_}/get_vkr`, {params:params, headers:headers} ).then(r => {
         let response = r.data
-        if ((response.length >= 2) && (!(response == 'Nothing to say')) && (!(response == "No findings by tag's query"))) {
+        if ((response.length >= 2) && (!(response == 'No data')) && (!(response == "No findings by tag's query"))) {
           response.sort(function (a,b) {
           if (a?.theme < b?.theme) {
             return -1;
@@ -170,14 +140,13 @@ function App_main() {
     }
   };
   
-  const uploadPasskey = async(url_, param) => { 
+  const uploadPasskey = async(url_, param, theme_name, headers) => { 
     try {
-      // console.log(param)
-      await axios.post(`${url_}/add_passkey`, param).then(r => {
-        let responce = r.data
-        openNotificationWithIcon('info', `Ваш пароль для '${param['theme']}': ${responce}`)
-        let resp = getPasskeyInitial(url_, param)
-        paramsShow(gqwForm, gqwForm.length, resp)
+      await axios.post(`${url_}/add_passkey`, param, {headers:headers}).then(r => {
+        let response_from_add_passkey = r.data
+        openNotificationWithIcon('info', `Ваш пароль для '${theme_name}': ${response_from_add_passkey}`)
+        getPasskeyInitial(url_, param, headers)
+        paramsShow(gqwForm, gqwForm.length, passkey)
       })
       setIsModalOpen(false);
     }
@@ -187,11 +156,10 @@ function App_main() {
     }
   };
 
-  const getPasskeyInitial = async(url_, param) => {
+  const getPasskeyInitial = async(url_, param, headers) => {
     try {
-       await axios.get(`${url_}/get_gqw_by_passkey?visitor_id=${param['visitor_id']}`, {param} ).then(r => {
+       await axios.get(`${url_}/get_initial_passkeys`, {params:param, headers:{...headers}} ).then(r => {
         let resp = r.data
-        // console.log(resp)
         if (!(resp == 'No data'))
           setPasskey(resp)
        })
@@ -202,26 +170,26 @@ function App_main() {
     }
   };
 
-  const getPasskey = async(url_, param) => {
+  const getVkrByPasskey = async(url_, param, headers) => {
     try {
-      // console.log(param)
-       await axios.get(`${url_}/get_gqw_by_passkey?password=${param['password']}&gqw_id=${param['gqw_id']}`, {param} ).then(r => {
-        let resp = r.data
-        // console.log(resp)
-        if (!(resp == 'Unvalid key')) {
-          axios.post(`${url_}/add_passkey`, param).then(r=> {
-            let resp_init = getPasskeyInitial(url_, param)
-            openNotificationWithIcon('success', 'Успешно добавлена полная версия')
-            paramsShow(gqwForm, gqwForm.length, resp_init)
-          })
-          setIsModalOpen(false);        
-        }
-        else {
-          openNotificationWithIcon('error', 'Неправильный ключ')
-          setIsModalOpen(false); 
-        }
-       })
+      let resp =''
+      await axios.get(`${url_}/get_vkr_by_passkey`, {params:param, headers:headers}).then(r => {
+        resp = r.data})
+      if (!(resp == 'No data') && !(resp == 'Unvalid key')) {
+        await axios.post(`${url_}/add_passkey`, param, {headers:headers}).then(r=> {
+          getPasskeyInitial(url_, param, headers)
+          openNotificationWithIcon('success', 'Успешно добавлена полная версия')
+          paramsShow(gqwForm, gqwForm.length, passkey)
+        })
+        setIsModalOpen(false);   
+        visitor['password'] = ''     
+      }
+      else {
+        openNotificationWithIcon('error', 'Неправильный ключ')
+        setIsModalOpen(false); 
+      }
     }
+    
     catch(err) {
       console.error('Error', err)
       alert(`Something wrong: ${err}`)
@@ -229,7 +197,9 @@ function App_main() {
   };
 
   const handleCancel = (target) => {
+    visitor['password'] = ''
     target.value = ''
+    
     setIsModalOpen(false);
   };
 
@@ -244,24 +214,24 @@ function App_main() {
   const SelectChange_theme = (event) => {
     let theme_list = []
     theme_list.push(event)
-    setGQW({...dataGQW, theme_: theme_list.join(',')})
+    setGQW({...dataGQW, theme: theme_list.join(',')})
   };
 
   const SelectChange_qualification = (event) => {
-    setGQW({...dataGQW, qualification_: event})
+    setGQW({...dataGQW, qualification: event})
   };
 
   const SelectChange_supervisor = (event) => {
     let superv_list = []
     superv_list.push(event)
-    setGQW({...dataGQW, supervisor_: superv_list.join(',')})
+    setGQW({...dataGQW, supervisor: superv_list.join(',')})
   };
 
 
   const SelectChange_tags = (event) => {
     let tag_list = []
     tag_list.push(event)
-    setGQW({...dataGQW, tags_:tag_list.join(',')})
+    setGQW({...dataGQW, tags:tag_list.join(',')})
   };
 
   const handleChangeFilter_top = (event) => {
@@ -274,68 +244,41 @@ function App_main() {
 
   const onReset = () => {
     form.resetFields();
-    setGQW(initialFormState)
+    setGQW(util.initialFormState)
     setFilter(0)
   };
   
-  const saveLink = (str) => {
-    localStorage.setItem('sharedValue', str)
+  const saveLink = (filename, bucket_type) => {
+    localStorage.setItem("filename", filename)
+    localStorage.setItem("bucket_type", bucket_type)
   };
   
-  const onChange_filter = (num) => {
-    let number = num.toString()
-    if (number.length >= 2) {
-      if ((['0', '5', '6', '7', '8', '9'].includes(number.slice(-1))) || (['11', '12', '13', '14'].includes(number.slice(-2)))) {
-        return 'работ'
-      }
-      else if ((['2', '3', '4'].includes(number.slice(-1))) && !(['11', '12', '13', '14'].includes(number.slice(-2)))) {
-        return 'работы'
-      }
-      else if ((['1'].includes(number.slice(-1))) && !(['11'].includes(number.slice(-2)))) {
-        return 'работу'
-      }
-    }
-    else if ((number.length === 1))
-      if (['1'].includes(number)) {
-        return 'работу'
-      }
-      else if (['2', '3', '4'].includes(number)) {
-        return 'работы'
-      }
-      else if (['0', '5', '6', '7', '8', '9'].includes(number)) {
-        return 'работ'
-      }
-  }
-  function CardVKR(item, key_list) {
-
-    const tag_array = (param) => {
-      let final_tag = []
-      for (let i in param) {
-        final_tag.push(param[i].tag_name)
-      }
-      return final_tag.join(', ')
-    };
-
-    const check_key_card = (key_list, param, link) => { 
-      if (Array.from(key_list).find(o => o.id == param)) {
+  const check_key_card = (key_list, param, reference) => { 
+      
+      if (Array.from(key_list).find((o) => o?.id == param)) {
         return (
-          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: </span><a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`full_pdf/${link}`)} target="_blank" >Полный текст</a>/ <a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`compressed/${link}`)} target="_blank" >Аннотация</a></p>
+          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: </span><a className='text-justify' href={`${pdf_external_url}/pdf_viewer`} onClick={() => saveLink(reference, compressed_path)} target="_blank" >Полный текст</a>/ <a className='text-justify' href={`${pdf_external_url}/pdf_viewer`} onClick={() => saveLink(reference, abstract_path)} target="_blank" >Аннотация</a></p>
         )}
       else {
         return (
-          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: <a className='text-justify' href={`http://10.6.41.116:5174/pdf_viewer`} onClick={() => saveLink(`compressed/${link}`)} target="_blank" >Аннотация</a></span></p>
+          <p className='my-2'><span className='font-bold'>Ссылка на ВКР: <a className='text-justify' href={`${pdf_external_url}/pdf_viewer`} onClick={() => saveLink(reference, abstract_path)} target="_blank" >Аннотация</a></span></p>
           )
         }
+    };
+
+  function CardVKR(item, key_list) {
+    const tag_array = (param) => {
+      return param.join(', ')
     };
 
     return( 
       <>
         <Card component='span' styles={{'title':{'textWrap': "wrap"}}} title={item?.theme}>
-          <div className='flex items-center'><span className='font-bold mr-2'>Руководитель: </span><Collapse className='w-130' size='small' items={[{label:item?.supervisor_gqw.name, children: <ul><li>Место работы: {item?.supervisor_gqw.department_gqw.department}</li><li>Учёная степень: {item?.supervisor_gqw.degree_gqw.degree}</li></ul>}]}/></div>
-          <p className='my-2'><span className='font-bold'>Уровень образования: </span>{item?.type_of_qualification.qualification}</p>
+          <div className='flex items-center'><span className='font-bold mr-2'>Руководитель: </span><Collapse className='w-130' size='small' items={[{label:item?.supervisor, children: <ul><li>Место работы: {item?.supervisor_department}</li><li>Учёная степень: {item?.supervisor_degree}</li></ul>}]}/></div>
+          <p className='my-2'><span className='font-bold'>Уровень образования: </span>{item?.qualification}</p>
           <p className='my-2 text-justify'><span className='font-bold'>Аннотация: </span>{item?.abstract}</p>
           {check_key_card(key_list, item?.id, item?.reference)}
-          <p className='my-2'><span className='font-bold'>Тэги: </span>{tag_array(item?.tag_gqw)}</p>
+          <p className='my-2'><span className='font-bold'>Тэги: </span>{tag_array(item?.tags)}</p>
           <div className='flex mb-2 place-self-center'><Button color="primary" variant='outlined' onClick={() => modalConfig(item?.id, item?.theme)} ><span>Получить полную версию ВКР</span></Button></div>
         </Card>
         
@@ -391,7 +334,7 @@ function App_main() {
               <div className="self-center m-2 text-center place-items-center">
                 <p className='mb-2'>Количество результатов: {filter_number}</p>
                 <div className='w-100 self-center bg-slate-500 rounded-lg place-items-center'>            
-                  <Collapse className='w-100' items={[{label: <span className='text-white'>Фильтр</span>, children: <div className='flex text-center justify-center w-90'><span className='mb-2 place-self-center'>Показать {<InputNumber min={0} max={params.length} onChange={handleChangeFilter_top}/>} {onChange_filter(filter_number)}</span></div>}]}/>
+                  <Collapse className='w-100' items={[{label: <span className='text-white'>Фильтр</span>, children: <div className='flex text-center justify-center w-90'><span className='mb-2 place-self-center'>Показать {<InputNumber min={0} max={params.length} onChange={handleChangeFilter_top}/>} {util.onChange_filter(filter_number)}</span></div>}]}/>
                 </div>
               </div>
               {paramsShow(params, filter_number, list_key)}
@@ -413,7 +356,7 @@ function App_main() {
             <div className='place-items-center'>  
             <div className='w-180'>
               <Form
-                {...layout}
+                {...util.layout}
                 form={form}
                 layout='vertical'
                 name="get_data"
@@ -505,13 +448,12 @@ function App_main() {
                     </div>
                   </div>   
                 </Form.Item>
-                <Form.Item {...tailLayout}>
+                <Form.Item {...util.tailLayout}>
                   <div className='flex justify-center'>
                     <Space>
                       <Button onClick = {() =>{
-                        getPasskeyInitial(url, visitor)
-                        fetchData(dataGQW, url)
-                        // console.log("here",dataGQW)
+                        getPasskeyInitial(backend_url, visitor, headers)
+                        fetchData(dataGQW, backend_url)
                         setFilter(0)
                       }} type="primary" htmlType="submit">
                         Поиск
