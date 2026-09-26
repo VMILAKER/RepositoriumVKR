@@ -1,3 +1,52 @@
+# Structure
+Project tree (only Backend and Frontend folders attached)
+```
+├── Backend
+│  ├── .dockerignore
+│  ├── .env.example
+│  ├── .gitignore
+│  ├── alembic
+│  │  ├── env.py
+│  │  ├── README
+│  │  ├── script.py.mako
+│  │  └── versions/
+│  ├── alembic.ini
+│  ├── config.py
+│  ├── docker-compose.yaml
+│  ├── Dockerfile
+│  ├── fonts
+│  │  └── TNR.ttf
+│  ├── main.py
+│  ├── requirements.txt
+│  ├── src
+│  │  ├── database.py
+│  │  ├── dto.py
+│  │  ├── models.py
+│  │  ├── routers.py
+│  │  └── services.py
+│  └── utilities.py
+├── Frontend
+│  ├── .env.example
+│  ├── .gitignore
+│  ├── docker-compose.yaml
+│  ├── Dockerfile
+│  ├── eslint.config.js
+│  ├── index.html
+│  ├── package-lock.json
+│  ├── package.json
+│  ├── README.md
+│  ├── src
+│  │  ├── App.css
+│  │  ├── App.jsx
+│  │  ├── components
+│  │  │  ├── PdfViewer.jsx
+│  │  │  ├── SearchPage.jsx
+│  │  │  ├── UploadPage.jsx
+│  │  │  └── Utilities.jsx
+│  │  ├── index.css
+│  │  └── main.jsx
+│  └── vite.config.js
+```
 # Installation
 **!Be aware that your machine supports X86-64-V2!** If does not, you have to implement images for minio, ollama and postgres that satisfy your machine requirements.
 ## Backend
