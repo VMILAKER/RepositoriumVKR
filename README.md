@@ -1,5 +1,5 @@
 ## Introduction
-This repository is considered to be the tool to collect and sort Graduate Qualification works of students. It might be helpful for pre-graduate students, who are searching for a theme of their qualification work, and supervisors as well. For advanced version here - [Advanced Version](https://github.com/VMILAKER/RepositoriumVKR/blob/advanced_version/README.md)
+This repository is considered to be the tool to collect and sort Graduate Qualification works of students. It might be helpful for pre-graduate students, who are searching for a theme of their qualification work, and supervisors as well. For advanced version here - [Advanced Version](https://github.com/VMILAKER/RepositoriumVKR/blob/advanced_version)
 ![Scheme of RepositoriumVKR work](Images/Repositorium.jpg)
 *Image 1. Scheme of RepositoriumVKR Structure*
 ### Uploading GQW
