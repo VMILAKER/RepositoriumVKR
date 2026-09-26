@@ -1,4 +1,9 @@
 # Structure
+In this version of RepositoriumVKR asynchronous MinIO and Ollama were connected in order to make project compact and robust, PostgeSQL got asynchronous version as well. 
+
+![Routing scheme of advanced version RepositoriumVKR](https://github.com/VMILAKER/RepositoriumVKR/blob/advanced_version/Images/Repositorium_advanced.jpg)
+*Figure 1. Data transmission logic of advanced version RepositoriumVKR*
+
 Project tree (only Backend and Frontend folders attached)
 ```
 ├── Backend
