@@ -30,7 +30,6 @@ function PdfViewer() {
           responseType: "blob",
         });
 
-        // Создаём строку blob-URL из Blob
         objectUrl = URL.createObjectURL(response.data);
         setPdfUrl(objectUrl);
         localStorage.clear()
@@ -151,7 +150,6 @@ function PdfViewer() {
           }}
         </Toolbar>
 
-        {/* fileUrl принимает строку — blob-URL */}
         <Viewer fileUrl={pdfUrl} plugins={[toolbarPluginInstance]} />
       </Worker>
     </div>
